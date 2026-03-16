@@ -1,104 +1,76 @@
 # CEO Dashboard — Mos-GSM
 
-Утренний CEO-дашборд для компании Mos-GSM (низковольтные системы: СКУД, видеонаблюдение, умный дом).
+Утренний CEO-дашборд для компании **Mos-GSM** — интегратора низковольтных систем (СКУД, видеонаблюдение, умный дом, усиление связи, пожарная безопасность, Wi-Fi). Москва и МО.
 
-## Архитектура
+Дашборд собирает данные из 8 источников и показывает генеральному директору полную картину бизнеса за 15–20 минут утром.
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   React SPA  │────▶│  FastAPI      │────▶│  PostgreSQL   │
-│   (frontend) │     │  (backend)    │     │  (Railway)    │
-└──────────────┘     └──────┬───────┘     └──────────────┘
-                           │
-                    ┌──────┴───────┐
-                    │  Data Sources │
-                    ├──────────────┤
-                    │ Bitrix24 API │  ◀── Phase 1
-                    │ Roistat API  │  ◀── Phase 1
-                    │ Yandex Direct│  ◀── Phase 2
-                    │ Yandex Metrik│  ◀── Phase 2
-                    │ Google Sheets│  ◀── Phase 3 (Rechka AI)
-                    │ Adesk webhooks│ ◀── Phase 4
-                    │ 1C Accounting│  ◀── Phase 4
-                    │ 1C UT        │  ◀── Phase 4
-                    │ Claude API   │  ◀── Phase 5
-                    └──────────────┘
-```
+## Быстрый старт
 
-## Стек
+### Требования
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 15+
 
-- **Backend:** FastAPI (Python 3.11+)
-- **Frontend:** React 18 + Tailwind CSS
-- **Database:** PostgreSQL 15
-- **Deployment:** Railway (GitHub auto-deploy)
-- **Auth:** Bitrix24 OAuth (svyaz.bitrix24.ru)
+### Локальная разработка
 
-## Экраны
+```bash
+# Backend
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp ../.env.example .env   # Заполнить переменные
+uvicorn app.main:app --reload --port 8000
 
-1. **Пульс** — 8 ключевых метрик, красные флаги, AI-саммари
-2. **Воронка** — маркетинг (Roistat), продажи (Bitrix24), конверсии по направлениям
-3. **Люди** — менеджеры (Bitrix24 + Rechka AI), монтажники (Bitrix24 выезды)
-4. **Деньги** — ДДС (Adesk), дебиторка (1С Бух), закупки (1С УТ)
-5. **Радар** — риски, прогнозы, AI-аналитика (Claude API)
-
-## Структура проекта
-
-```
-ceo-dashboard/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI app, CORS, routes
-│   │   ├── config.py            # Environment variables
-│   │   ├── database.py          # PostgreSQL connection
-│   │   ├── models.py            # SQLAlchemy models
-│   │   ├── services/
-│   │   │   ├── bitrix24.py      # Bitrix24 API client
-│   │   │   ├── roistat.py       # Roistat API client
-│   │   │   ├── rechka.py        # Google Sheets (Rechka AI)
-│   │   │   ├── adesk.py         # Adesk webhooks
-│   │   │   ├── onec.py          # 1C HTTP services client
-│   │   │   └── ai_summary.py    # Claude API for AI insights
-│   │   ├── routers/
-│   │   │   ├── pulse.py         # /api/pulse
-│   │   │   ├── funnel.py        # /api/funnel
-│   │   │   ├── people.py        # /api/people
-│   │   │   ├── money.py         # /api/money
-│   │   │   ├── radar.py         # /api/radar
-│   │   │   └── admin.py         # /api/admin (sales plan, settings)
-│   │   └── utils/
-│   │       ├── conversions.py   # Funnel conversion calculations
-│   │       └── cache.py         # Redis/in-memory cache
-│   ├── requirements.txt
-│   └── Procfile
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── pages/
-│   │   │   ├── Pulse.jsx
-│   │   │   ├── Funnel.jsx
-│   │   │   ├── People.jsx
-│   │   │   ├── Money.jsx
-│   │   │   └── Radar.jsx
-│   │   └── components/
-│   ├── package.json
-│   └── tailwind.config.js
-├── .github/
-│   └── workflows/
-│       └── deploy.yml
-├── railway.toml
-└── README.md
+# Frontend (в отдельном терминале)
+cd frontend
+npm install
+npm run dev
 ```
 
-## Фазы разработки
+### Деплой на Railway
 
-### Phase 1 — Bitrix24 + Roistat (70% ценности)
-- [ ] Backend: Bitrix24 API client (leads, deals, tasks)
-- [ ] Backend: Roistat API client (channels, costs, leads)
-- [ ] Database: models for cached data
-- [ ] API: /pulse, /funnel, /people endpoints
-- [ ] Frontend: Pulse, Funnel, People screens
+1. Создать проект на Railway, подключить GitHub-репозиторий
+2. Добавить PostgreSQL сервис
+3. Связать DATABASE_URL через Variables → Add Reference Variable
+4. Добавить остальные переменные из `.env.example`
+5. Push в main → автодеплой
 
-### Phase 2 — Yandex Direct + Metrika
-### Phase 3 — Rechka AI (Google Sheets)
-### Phase 4 — Adesk + 1C
-### Phase 5 — AI Summary + Radar
+## 5 экранов дашборда
+
+### 1. Пульс (`/`) — 30 секунд на всю картину
+- 8 ключевых метрик с цветовой индикацией
+- AI-саммари от Claude — что случилось и куда смотреть
+- Красные флаги — кликабельные, с провалом в детализацию
+- Мини-воронка и план-факт по валовому доходу
+
+### 2. Воронка (`/funnel`) — маркетинг + продажи
+- **Маркетинг** — каналы, расходы с НДС, CPL, ROI
+- **Продажи** — воронка лид→осмотр→монтаж, конверсии по менеджерам
+- **По направлениям** — СКУД/Видео/Умный дом/Усиление связи/Пожарка/Wi-Fi
+
+### 3. Люди (`/people`) — команда
+- **Менеджеры** — сделки, время реакции, Речка AI (7 навыков), конверсии
+- **Монтажники** — загрузка 9 бригад, монтажи/осмотры/гарантии
+
+### 4. Деньги (`/money`) — финансы
+- **ДДС** — поступления/расходы, балансы ООО + ИП + наличные
+- **Дебиторка** — топ должников, просрочка
+- **Закупки** — привязка к объектам, предоплаты, замороженный капитал
+
+### 5. Радар (`/radar`) — риски и прогнозы
+- AI-аналитика от Claude с рекомендациями
+- Прогноз выручки 14/30/90 дней
+- Ранжированные риски с суммами потерь
+
+## Дорожная карта
+
+| Фаза | Источники | Статус |
+|------|-----------|--------|
+| 1 | Bitrix24 + Roistat (70% ценности) | 🔧 В работе |
+| 2 | Яндекс.Директ + Метрика | ⏳ Планируется |
+| 3 | Rechka AI (Google Sheets) | ⏳ Планируется |
+| 4 | Adesk + 1С Бухг. + 1С УТ | ⏳ Планируется |
+| 5 | Claude API (AI-саммари + Радар) | ⏳ Планируется |
+
+Подробная техническая документация — в файле `ARCHITECTURE.md`.
