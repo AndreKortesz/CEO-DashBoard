@@ -5,7 +5,7 @@ Sales plan, thresholds, manual overrides.
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.database import get_db
 from app.models import SalesPlan
@@ -21,9 +21,9 @@ class SalesPlanInput(BaseModel):
 
 
 @router.get("/sales-plan")
-async def get_sales_plans(
+def get_sales_plans(
     year: int = None,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Get all sales plans, optionally filtered by year."""
     query = select(SalesPlan)
@@ -31,7 +31,7 @@ async def get_sales_plans(
         query = query.where(SalesPlan.year == year)
     query = query.order_by(SalesPlan.year, SalesPlan.month)
 
-    result = await db.execute(query)
+    result = db.execute(query)
     plans = result.scalars().all()
 
     return [
@@ -47,9 +47,9 @@ async def get_sales_plans(
 
 
 @router.post("/sales-plan")
-async def set_sales_plan(
+def set_sales_plan(
     plan: SalesPlanInput,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Set or update monthly sales plan (валовый доход)."""
     if plan.month < 1 or plan.month > 12:
@@ -58,7 +58,7 @@ async def set_sales_plan(
         raise HTTPException(status_code=400, detail="Plan amount must be positive")
 
     # Check if exists
-    existing = await db.execute(
+    existing = db.execute(
         select(SalesPlan).where(
             SalesPlan.year == plan.year,
             SalesPlan.month == plan.month,
@@ -79,7 +79,7 @@ async def set_sales_plan(
         )
         db.add(row)
 
-    await db.commit()
+    db.commit()
 
     return {
         "status": "ok",

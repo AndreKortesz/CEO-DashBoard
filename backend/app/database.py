@@ -1,37 +1,36 @@
-"""PostgreSQL connection via SQLAlchemy async."""
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+"""PostgreSQL connection via SQLAlchemy (sync mode with psycopg)."""
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 from app.config import get_settings
 
 
 settings = get_settings()
 
-# Convert postgresql:// to postgresql+asyncpg://
+# Ensure postgresql:// prefix (psycopg uses it directly)
 db_url = settings.DATABASE_URL
-if db_url.startswith("postgresql://"):
-    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-engine = create_async_engine(db_url, echo=settings.DEBUG, pool_size=5, max_overflow=10)
+engine = create_engine(db_url, echo=settings.DEBUG, pool_size=5, max_overflow=10)
 
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-async def get_db():
-    async with async_session() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
-async def init_db():
+def get_db():
+    db = SessionLocal()
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+        yield db
+    finally:
+        db.close()
+
+
+def init_db():
+    try:
+        Base.metadata.create_all(bind=engine)
         print("Database initialized successfully")
     except Exception as e:
         print(f"Warning: Database init failed: {e}")

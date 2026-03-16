@@ -5,7 +5,7 @@ Conversions: лид → осмотр → монтаж.
 """
 from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timedelta, date
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models import Lead, Deal, Visit, RoistatChannel
@@ -16,9 +16,9 @@ settings = get_settings()
 
 
 @router.get("/funnel/marketing")
-async def get_marketing(
+def get_marketing(
     period: str = Query("month", regex="^(day|week|month)$"),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Marketing metrics from Roistat cache."""
     today = date.today()
@@ -30,7 +30,7 @@ async def get_marketing(
         date_from = today.replace(day=1)
 
     # Aggregated channel data
-    result = await db.execute(
+    result = db.execute(
         select(
             RoistatChannel.channel_name,
             func.sum(RoistatChannel.visits).label("visits"),
@@ -80,10 +80,10 @@ async def get_marketing(
 
 
 @router.get("/funnel/sales")
-async def get_sales(db: AsyncSession = Depends(get_db)):
+def get_sales(db: Session = Depends(get_db)):
     """Sales funnel — deal stages + conversions."""
     # Deals by stage
-    stages = await db.execute(
+    stages = db.execute(
         select(
             Deal.stage_name,
             func.count(Deal.id).label("count"),
@@ -100,7 +100,7 @@ async def get_sales(db: AsyncSession = Depends(get_db)):
     ]
 
     # Lead rejection reasons
-    rejections = await db.execute(
+    rejections = db.execute(
         select(
             Lead.rejection_reason,
             func.count(Lead.id).label("count"),
@@ -121,10 +121,10 @@ async def get_sales(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/funnel/conversions")
-async def get_conversions(
+def get_conversions(
     group_by: str = Query(None, regex="^(manager|direction)$"),
     days: int = Query(30, ge=7, le=365),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """
     Conversion funnel: лид → осмотр → монтаж.
@@ -135,9 +135,9 @@ async def get_conversions(
     # Total leads
     leads_q = select(Lead).where(Lead.created_at >= cutoff)
     if group_by:
-        leads = (await db.execute(leads_q)).scalars().all()
+        leads = (db.execute(leads_q)).scalars().all()
     else:
-        leads_count = await db.execute(
+        leads_count = db.execute(
             select(func.count(Lead.id)).where(Lead.created_at >= cutoff)
         )
         total_leads = leads_count.scalar() or 0
@@ -148,7 +148,7 @@ async def get_conversions(
         Visit.is_completed == True,
         Visit.created_at >= cutoff,
     )
-    inspections = (await db.execute(inspections_q)).scalars().all()
+    inspections = (db.execute(inspections_q)).scalars().all()
     unique_inspections = {v.deal_id: v for v in inspections if v.deal_id}
 
     # Montages (unique per deal_id)
@@ -157,7 +157,7 @@ async def get_conversions(
         Visit.is_completed == True,
         Visit.created_at >= cutoff,
     )
-    montages = (await db.execute(montages_q)).scalars().all()
+    montages = (db.execute(montages_q)).scalars().all()
     unique_montages = {v.deal_id: v for v in montages if v.deal_id}
 
     if not group_by:
@@ -177,7 +177,7 @@ async def get_conversions(
     groups = defaultdict(lambda: {"leads": 0, "inspections": set(), "montages": set()})
 
     if group_by == "manager":
-        all_leads = (await db.execute(leads_q)).scalars().all()
+        all_leads = (db.execute(leads_q)).scalars().all()
         for l in all_leads:
             groups[l.assigned_by]["leads"] += 1
         for v in inspections:
@@ -187,7 +187,7 @@ async def get_conversions(
             if v.deal_id:
                 groups[v.assigned_manager]["montages"].add(v.deal_id)
     elif group_by == "direction":
-        all_leads = (await db.execute(leads_q)).scalars().all()
+        all_leads = (db.execute(leads_q)).scalars().all()
         for l in all_leads:
             groups[l.direction or "Неизвестно"]["leads"] += 1
         # For visits, we need deal direction — join would be better, simplified here

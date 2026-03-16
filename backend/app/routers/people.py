@@ -5,7 +5,7 @@ Installer data from Bitrix24 visits funnel.
 """
 from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timedelta, date
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models import Lead, Deal, Visit, RechkaWeekly, RechkaCall
@@ -16,7 +16,7 @@ settings = get_settings()
 
 
 @router.get("/people/managers")
-async def get_managers(db: AsyncSession = Depends(get_db)):
+def get_managers(db: Session = Depends(get_db)):
     """Manager performance data."""
     today = date.today()
     month_start = today.replace(day=1)
@@ -25,7 +25,7 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
     managers_data = []
     for manager in settings.MANAGERS:
         # Closed deals this month
-        closed = await db.execute(
+        closed = db.execute(
             select(func.count(Deal.id), func.sum(Deal.amount)).where(
                 Deal.assigned_by == manager,
                 Deal.is_won == True,
@@ -37,7 +37,7 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
         closed_amount = closed_row[1] or 0
 
         # Average lead response time
-        leads_with_activity = await db.execute(
+        leads_with_activity = db.execute(
             select(
                 Lead.created_at,
                 Lead.first_activity_at,
@@ -56,7 +56,7 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
         avg_response = round(sum(response_times) / len(response_times), 0) if response_times else None
 
         # Overdue tasks count
-        overdue = await db.execute(
+        overdue = db.execute(
             select(func.count(Deal.id)).where(
                 Deal.assigned_by == manager,
                 Deal.is_won == False,
@@ -67,7 +67,7 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
         overdue_val = overdue.scalar() or 0
 
         # Latest Rechka score
-        rechka = await db.execute(
+        rechka = db.execute(
             select(RechkaWeekly).where(
                 RechkaWeekly.manager_name == manager,
             ).order_by(RechkaWeekly.week_number.desc()).limit(1)
@@ -94,7 +94,7 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
         })
 
     # Department-level Rechka
-    dept_rechka = await db.execute(
+    dept_rechka = db.execute(
         select(RechkaWeekly).where(
             RechkaWeekly.manager_name == "ОТДЕЛ",
         ).order_by(RechkaWeekly.week_number.desc()).limit(1)
@@ -112,13 +112,13 @@ async def get_managers(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/people/managers/{manager_name}")
-async def get_manager_detail(
+def get_manager_detail(
     manager_name: str,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Detailed manager card with Rechka history."""
     # Rechka weekly history (last 10 weeks)
-    rechka_history = await db.execute(
+    rechka_history = db.execute(
         select(RechkaWeekly).where(
             RechkaWeekly.manager_name == manager_name,
         ).order_by(RechkaWeekly.week_number.desc()).limit(10)
@@ -126,7 +126,7 @@ async def get_manager_detail(
     history = rechka_history.scalars().all()
 
     # Active deals by stage
-    deals_by_stage = await db.execute(
+    deals_by_stage = db.execute(
         select(
             Deal.stage_name,
             func.count(Deal.id).label("count"),
@@ -139,7 +139,7 @@ async def get_manager_detail(
     )
 
     # Stale deals
-    stale = await db.execute(
+    stale = db.execute(
         select(Deal).where(
             Deal.assigned_by == manager_name,
             Deal.last_activity_at < datetime.utcnow() - timedelta(days=7),
@@ -183,7 +183,7 @@ async def get_manager_detail(
 
 
 @router.get("/people/installers")
-async def get_installers(db: AsyncSession = Depends(get_db)):
+def get_installers(db: Session = Depends(get_db)):
     """Installer workload and performance."""
     today = date.today()
     week_end = today + timedelta(days=(6 - today.weekday()))
@@ -193,7 +193,7 @@ async def get_installers(db: AsyncSession = Depends(get_db)):
     installers_data = []
     for installer in settings.INSTALLERS:
         # This week's visits
-        week_visits = await db.execute(
+        week_visits = db.execute(
             select(
                 Visit.visit_type,
                 func.count(Visit.id).label("count"),
@@ -210,7 +210,7 @@ async def get_installers(db: AsyncSession = Depends(get_db)):
         workload_pct = min(round(total_visits / 5 * 100, 0), 100)
 
         # Completed yesterday
-        completed_yesterday = await db.execute(
+        completed_yesterday = db.execute(
             select(func.count(Visit.id)).where(
                 Visit.assigned_installer == installer,
                 Visit.is_completed == True,

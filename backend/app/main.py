@@ -16,7 +16,7 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Startup/shutdown events."""
     # Initialize database tables
-    await init_db()
+    init_db()
     yield
 
 

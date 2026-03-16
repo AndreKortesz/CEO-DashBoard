@@ -4,7 +4,7 @@ Aggregates key metrics from all sources.
 """
 from fastapi import APIRouter, Depends
 from datetime import datetime, timedelta, date
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models import Lead, Deal, Visit, RoistatChannel, SalesPlan
@@ -15,7 +15,7 @@ settings = get_settings()
 
 
 @router.get("/pulse")
-async def get_pulse(db: AsyncSession = Depends(get_db)):
+def get_pulse(db: Session = Depends(get_db)):
     """
     Main pulse screen data.
     Returns key metrics, red flags, mini-charts.
@@ -26,7 +26,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     month_start = today.replace(day=1)
 
     # --- Revenue yesterday (closed deals) ---
-    revenue_yesterday = await db.execute(
+    revenue_yesterday = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
             func.date(Deal.closed_at) == yesterday,
@@ -35,7 +35,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     revenue_yesterday_val = revenue_yesterday.scalar() or 0
 
     # --- New leads yesterday ---
-    leads_yesterday = await db.execute(
+    leads_yesterday = db.execute(
         select(func.count(Lead.id)).where(
             func.date(Lead.created_at) == yesterday,
         )
@@ -43,7 +43,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     leads_yesterday_val = leads_yesterday.scalar() or 0
 
     # --- Leads this week ---
-    leads_week = await db.execute(
+    leads_week = db.execute(
         select(func.count(Lead.id)).where(
             Lead.created_at >= datetime.combine(week_ago, datetime.min.time()),
         )
@@ -51,7 +51,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     leads_week_val = leads_week.scalar() or 0
 
     # --- Closed deals yesterday ---
-    closed_yesterday = await db.execute(
+    closed_yesterday = db.execute(
         select(func.count(Deal.id)).where(
             Deal.is_won == True,
             func.date(Deal.closed_at) == yesterday,
@@ -60,7 +60,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     closed_yesterday_val = closed_yesterday.scalar() or 0
 
     # --- Montages completed yesterday (from visits funnel) ---
-    montages_yesterday = await db.execute(
+    montages_yesterday = db.execute(
         select(func.count(Visit.id)).where(
             Visit.visit_type.in_(["М", "M"]),
             Visit.is_completed == True,
@@ -72,7 +72,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     # --- Red flags ---
     # Stale deals (no activity > 7 days)
     stale_cutoff = datetime.utcnow() - timedelta(days=7)
-    stale_deals = await db.execute(
+    stale_deals = db.execute(
         select(func.count(Deal.id)).where(
             Deal.last_activity_at < stale_cutoff,
             Deal.is_won == False,
@@ -82,7 +82,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     stale_deals_val = stale_deals.scalar() or 0
 
     # Stuck montages
-    stuck_montages = await db.execute(
+    stuck_montages = db.execute(
         select(func.count(Deal.id)).where(
             Deal.stage_name.ilike("%монтаж завис%"),
         )
@@ -90,7 +90,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     stuck_montages_val = stuck_montages.scalar() or 0
 
     # --- Funnel snapshot ---
-    active_leads = await db.execute(
+    active_leads = db.execute(
         select(func.count(Lead.id)).where(
             Lead.is_converted == False,
             Lead.status_id.notin_(["JUNK", "CONVERTED"]),
@@ -98,7 +98,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     )
     active_leads_val = active_leads.scalar() or 0
 
-    active_deals = await db.execute(
+    active_deals = db.execute(
         select(func.count(Deal.id)).where(
             Deal.is_won == False,
             Deal.is_lost == False,
@@ -108,7 +108,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     active_deals_val = active_deals.scalar() or 0
 
     # --- Sales plan ---
-    plan = await db.execute(
+    plan = db.execute(
         select(SalesPlan).where(
             SalesPlan.year == today.year,
             SalesPlan.month == today.month,
@@ -118,7 +118,7 @@ async def get_pulse(db: AsyncSession = Depends(get_db)):
     plan_amount = plan_row.plan_amount if plan_row else 0
 
     # Monthly gross income
-    monthly_gross = await db.execute(
+    monthly_gross = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
             Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
