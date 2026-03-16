@@ -29,5 +29,10 @@ async def get_db():
 
 
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("Database initialized successfully")
+    except Exception as e:
+        print(f"Warning: Database init failed: {e}")
+        print("App will start, but DB features won't work until connection is available")
