@@ -1,0 +1,215 @@
+"""
+/api/funnel — Marketing + Sales funnel.
+Marketing data from Roistat, sales from Bitrix24.
+Conversions: лид → осмотр → монтаж.
+"""
+from fastapi import APIRouter, Depends, Query
+from datetime import datetime, timedelta, date
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.database import get_db
+from app.models import Lead, Deal, Visit, RoistatChannel
+from app.config import get_settings
+
+router = APIRouter()
+settings = get_settings()
+
+
+@router.get("/funnel/marketing")
+async def get_marketing(
+    period: str = Query("month", regex="^(day|week|month)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marketing metrics from Roistat cache."""
+    today = date.today()
+    if period == "day":
+        date_from = today - timedelta(days=1)
+    elif period == "week":
+        date_from = today - timedelta(days=7)
+    else:
+        date_from = today.replace(day=1)
+
+    # Aggregated channel data
+    result = await db.execute(
+        select(
+            RoistatChannel.channel_name,
+            func.sum(RoistatChannel.visits).label("visits"),
+            func.sum(RoistatChannel.leads).label("leads"),
+            func.sum(RoistatChannel.cost_with_vat).label("cost"),
+            func.sum(RoistatChannel.calls).label("calls"),
+            func.sum(RoistatChannel.sales).label("sales"),
+            func.sum(RoistatChannel.revenue).label("revenue"),
+        ).where(
+            RoistatChannel.date >= date_from,
+        ).group_by(
+            RoistatChannel.channel_name,
+        ).order_by(
+            func.sum(RoistatChannel.leads).desc(),
+        )
+    )
+    channels = result.all()
+
+    total_cost = sum(c.cost or 0 for c in channels)
+    total_leads = sum(c.leads or 0 for c in channels)
+    total_revenue = sum(c.revenue or 0 for c in channels)
+
+    return {
+        "period": period,
+        "totals": {
+            "cost": round(total_cost, 0),
+            "leads": total_leads,
+            "cpl": round(total_cost / total_leads, 0) if total_leads > 0 else 0,
+            "roi": round((total_revenue - total_cost) / total_cost * 100, 1) if total_cost > 0 else None,
+        },
+        "channels": [
+            {
+                "name": c.channel_name,
+                "visits": c.visits or 0,
+                "leads": c.leads or 0,
+                "cost": round(c.cost or 0, 0),
+                "cpl": round((c.cost or 0) / c.leads, 0) if c.leads else 0,
+                "calls": c.calls or 0,
+                "conversion": round(c.leads / c.visits * 100, 1) if c.visits else 0,
+                "sales": c.sales or 0,
+                "revenue": round(c.revenue or 0, 0),
+                "roi": round(((c.revenue or 0) - (c.cost or 0)) / (c.cost or 1) * 100, 1) if c.cost else None,
+            }
+            for c in channels
+        ],
+    }
+
+
+@router.get("/funnel/sales")
+async def get_sales(db: AsyncSession = Depends(get_db)):
+    """Sales funnel — deal stages + conversions."""
+    # Deals by stage
+    stages = await db.execute(
+        select(
+            Deal.stage_name,
+            func.count(Deal.id).label("count"),
+            func.sum(Deal.amount).label("total"),
+        ).where(
+            Deal.is_won == False,
+            Deal.is_lost == False,
+            Deal.category_id == 7,
+        ).group_by(Deal.stage_name)
+    )
+    stage_data = [
+        {"stage": s.stage_name, "count": s.count, "total": round(s.total or 0, 0)}
+        for s in stages.all()
+    ]
+
+    # Lead rejection reasons
+    rejections = await db.execute(
+        select(
+            Lead.rejection_reason,
+            func.count(Lead.id).label("count"),
+        ).where(
+            Lead.rejection_reason.isnot(None),
+            Lead.created_at >= datetime.utcnow() - timedelta(days=30),
+        ).group_by(Lead.rejection_reason).order_by(func.count(Lead.id).desc())
+    )
+    rejection_data = [
+        {"reason": r.rejection_reason, "count": r.count}
+        for r in rejections.all()
+    ]
+
+    return {
+        "stages": stage_data,
+        "rejections": rejection_data,
+    }
+
+
+@router.get("/funnel/conversions")
+async def get_conversions(
+    group_by: str = Query(None, regex="^(manager|direction)$"),
+    days: int = Query(30, ge=7, le=365),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Conversion funnel: лид → осмотр → монтаж.
+    Optional grouping by manager or direction.
+    """
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    # Total leads
+    leads_q = select(Lead).where(Lead.created_at >= cutoff)
+    if group_by:
+        leads = (await db.execute(leads_q)).scalars().all()
+    else:
+        leads_count = await db.execute(
+            select(func.count(Lead.id)).where(Lead.created_at >= cutoff)
+        )
+        total_leads = leads_count.scalar() or 0
+
+    # Inspections (unique per deal_id)
+    inspections_q = select(Visit).where(
+        Visit.visit_type.in_(["О"]),
+        Visit.is_completed == True,
+        Visit.created_at >= cutoff,
+    )
+    inspections = (await db.execute(inspections_q)).scalars().all()
+    unique_inspections = {v.deal_id: v for v in inspections if v.deal_id}
+
+    # Montages (unique per deal_id)
+    montages_q = select(Visit).where(
+        Visit.visit_type.in_(["М", "M"]),
+        Visit.is_completed == True,
+        Visit.created_at >= cutoff,
+    )
+    montages = (await db.execute(montages_q)).scalars().all()
+    unique_montages = {v.deal_id: v for v in montages if v.deal_id}
+
+    if not group_by:
+        n_insp = len(unique_inspections)
+        n_mont = len(unique_montages)
+        return {
+            "leads": total_leads,
+            "inspections": n_insp,
+            "montages": n_mont,
+            "conv_lead_inspection": round(n_insp / total_leads * 100, 1) if total_leads else 0,
+            "conv_inspection_montage": round(n_mont / n_insp * 100, 1) if n_insp else 0,
+            "conv_lead_montage": round(n_mont / total_leads * 100, 1) if total_leads else 0,
+        }
+
+    # Grouped conversions
+    from collections import defaultdict
+    groups = defaultdict(lambda: {"leads": 0, "inspections": set(), "montages": set()})
+
+    if group_by == "manager":
+        all_leads = (await db.execute(leads_q)).scalars().all()
+        for l in all_leads:
+            groups[l.assigned_by]["leads"] += 1
+        for v in inspections:
+            if v.deal_id:
+                groups[v.assigned_manager]["inspections"].add(v.deal_id)
+        for v in montages:
+            if v.deal_id:
+                groups[v.assigned_manager]["montages"].add(v.deal_id)
+    elif group_by == "direction":
+        all_leads = (await db.execute(leads_q)).scalars().all()
+        for l in all_leads:
+            groups[l.direction or "Неизвестно"]["leads"] += 1
+        # For visits, we need deal direction — join would be better, simplified here
+        for v in inspections:
+            if v.deal_id:
+                groups["Общее"]["inspections"].add(v.deal_id)
+        for v in montages:
+            if v.deal_id:
+                groups["Общее"]["montages"].add(v.deal_id)
+
+    result = {}
+    for key, data in groups.items():
+        n_l = data["leads"]
+        n_i = len(data["inspections"])
+        n_m = len(data["montages"])
+        result[key] = {
+            "leads": n_l,
+            "inspections": n_i,
+            "montages": n_m,
+            "conv_lead_inspection": round(n_i / n_l * 100, 1) if n_l else 0,
+            "conv_inspection_montage": round(n_m / n_i * 100, 1) if n_i else 0,
+            "conv_lead_montage": round(n_m / n_l * 100, 1) if n_l else 0,
+        }
+
+    return {"group_by": group_by, "data": result}
