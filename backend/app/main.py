@@ -32,7 +32,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://*.up.railway.app",
+        "https://ceo-dashboard-production-c36b.up.railway.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -47,9 +47,10 @@ async def health():
 
 
 # --- Import routers ---
-from app.routers import pulse, funnel, people, admin
+from app.routers import pulse, funnel, people, admin, sync
 
 app.include_router(pulse.router, prefix="/api", tags=["Pulse"])
 app.include_router(funnel.router, prefix="/api", tags=["Funnel"])
 app.include_router(people.router, prefix="/api", tags=["People"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(sync.router, prefix="/api", tags=["Sync"])

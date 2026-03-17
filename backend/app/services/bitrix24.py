@@ -1,44 +1,50 @@
 """
-Bitrix24 REST API client.
-Handles leads (crm.lead.*), deals (crm.deal.*, category_id=7),
-and visits (crm.deal.*, category_id=45).
+Bitrix24 REST API client (SYNC).
+Handles leads, deals (cat 7), visits (cat 45), users, stages.
+All methods are synchronous — compatible with sync SQLAlchemy routers.
 """
 import httpx
+import time
 from datetime import datetime, timedelta
-from typing import Optional
 from app.config import get_settings
 
 settings = get_settings()
 
 
 class Bitrix24Service:
-    """Client for Bitrix24 REST API via webhook."""
+    """Synchronous client for Bitrix24 REST API via webhook."""
 
     def __init__(self):
         self.base_url = settings.BITRIX24_WEBHOOK_URL.rstrip("/")
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.Client(timeout=30.0)
+        self._user_map = None
+        self._stage_maps = {}
 
-    async def _call(self, method: str, params: dict = None) -> dict:
-        """Make a single API call."""
+    def _call(self, method: str, params: dict = None) -> dict:
         url = f"{self.base_url}/{method}"
-        response = await self.client.post(url, json=params or {})
+        response = self.client.post(url, json=params or {})
         response.raise_for_status()
         return response.json()
 
-    async def _fetch_all(self, method: str, params: dict = None) -> list:
-        """Fetch all records with pagination (50 per page)."""
+    def _fetch_all(self, method: str, params: dict = None) -> list:
+        """Fetch all records with pagination (50 per page). Respects rate limits."""
         params = params or {}
         all_items = []
         start = 0
 
         while True:
             params["start"] = start
-            data = await self._call(method, params)
-            items = data.get("result", [])
+            data = self._call(method, params)
+            result = data.get("result", [])
 
-            if isinstance(items, dict):
-                # Some methods return dict with nested results
-                items = list(items.values()) if items else []
+            # tasks.task.list returns {"tasks": [...]}
+            if isinstance(result, dict):
+                if "tasks" in result:
+                    items = result["tasks"]
+                else:
+                    items = list(result.values()) if result else []
+            else:
+                items = result
 
             all_items.extend(items)
 
@@ -47,195 +53,153 @@ class Bitrix24Service:
                 break
             start = next_start
 
+            # Rate limit: Bitrix24 allows 2 req/sec for webhooks
+            time.sleep(0.5)
+
         return all_items
+
+    # =========================================================
+    # USER MAP (ID -> full name)
+    # =========================================================
+
+    def get_user_map(self) -> dict:
+        """Get mapping: user_id (str) -> full name. Cached per instance."""
+        if self._user_map is not None:
+            return self._user_map
+
+        users = self._call("user.get", {"filter": {"ACTIVE": True}})
+        result = users.get("result", [])
+        self._user_map = {}
+        for u in result:
+            uid = str(u.get("ID", ""))
+            name = f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip()
+            if uid and name:
+                self._user_map[uid] = name
+        return self._user_map
+
+    def resolve_user(self, user_id) -> str:
+        """Resolve user ID to name."""
+        if not user_id:
+            return ""
+        return self.get_user_map().get(str(user_id), f"ID:{user_id}")
+
+    # =========================================================
+    # STAGE MAP (stage_id -> stage name)
+    # =========================================================
+
+    def get_stage_map(self, category_id: int) -> dict:
+        """Get stage_id -> stage_name for a deal category. Cached."""
+        if category_id in self._stage_maps:
+            return self._stage_maps[category_id]
+
+        data = self._call("crm.dealcategory.stage.list", {"id": category_id})
+        stages = data.get("result", [])
+        self._stage_maps[category_id] = {
+            s["STATUS_ID"]: s["NAME"] for s in stages
+        }
+        return self._stage_maps[category_id]
+
+    def get_lead_status_map(self) -> dict:
+        """Get lead status_id -> status_name."""
+        data = self._call("crm.status.list", {"filter": {"ENTITY_ID": "STATUS"}})
+        return {s["STATUS_ID"]: s["NAME"] for s in data.get("result", [])}
 
     # =========================================================
     # LEADS
     # =========================================================
 
-    async def get_leads(
-        self,
-        status_id: str = None,
-        assigned_by: int = None,
-        date_from: datetime = None,
-        date_to: datetime = None,
-    ) -> list:
-        """Fetch leads with optional filters."""
+    def get_leads(self, date_from: datetime = None, date_to: datetime = None) -> list:
         filters = {}
-        if status_id:
-            filters["STATUS_ID"] = status_id
-        if assigned_by:
-            filters["ASSIGNED_BY_ID"] = assigned_by
         if date_from:
             filters[">=DATE_CREATE"] = date_from.isoformat()
         if date_to:
             filters["<=DATE_CREATE"] = date_to.isoformat()
 
-        params = {
+        return self._fetch_all("crm.lead.list", {
             "filter": filters,
             "select": [
-                "ID", "TITLE", "STATUS_ID", "SOURCE_ID", "SOURCE_DESCRIPTION",
-                "ASSIGNED_BY_ID", "OPPORTUNITY", "DATE_CREATE", "DATE_CLOSED",
-                "UF_*",  # Custom fields including направление
+                "ID", "TITLE", "STATUS_ID", "SOURCE_ID",
+                "ASSIGNED_BY_ID", "OPPORTUNITY", "DATE_CREATE",
+                "DATE_CLOSED", "DATE_MODIFY", "STATUS_SEMANTIC_ID",
+                "LAST_ACTIVITY_TIME",
+                settings.BX_LEAD_DIRECTION_FIELD,
+                settings.BX_LEAD_REJECTION_FIELD,
+                settings.BX_LEAD_AREA_FIELD,
             ],
-            "order": {"DATE_CREATE": "DESC"},
-        }
-        return await self._fetch_all("crm.lead.list", params)
-
-    async def get_lead_statuses(self) -> list:
-        """Get all lead status names."""
-        data = await self._call("crm.status.list", {
-            "filter": {"ENTITY_ID": "STATUS"}
+            "order": {"ID": "ASC"},
         })
-        return data.get("result", [])
-
-    async def get_lead_activities(self, lead_id: int) -> list:
-        """Get activities for a lead (for response time calculation)."""
-        data = await self._call("crm.activity.list", {
-            "filter": {
-                "OWNER_TYPE_ID": 1,  # Lead
-                "OWNER_ID": lead_id,
-            },
-            "order": {"CREATED": "ASC"},
-            "select": ["ID", "CREATED", "TYPE_ID", "DIRECTION"],
-        })
-        return data.get("result", [])
 
     # =========================================================
     # DEALS (category_id=7 — main sales funnel)
     # =========================================================
 
-    async def get_deals(
-        self,
-        stage_id: str = None,
-        assigned_by: int = None,
-        category_id: int = 7,
-        date_from: datetime = None,
-    ) -> list:
-        """Fetch deals from specified category."""
+    def get_deals(self, category_id: int = 7, date_from: datetime = None) -> list:
         filters = {"CATEGORY_ID": category_id}
-        if stage_id:
-            filters["STAGE_ID"] = stage_id
-        if assigned_by:
-            filters["ASSIGNED_BY_ID"] = assigned_by
         if date_from:
             filters[">=DATE_CREATE"] = date_from.isoformat()
 
-        params = {
+        return self._fetch_all("crm.deal.list", {
             "filter": filters,
             "select": [
                 "ID", "TITLE", "STAGE_ID", "CATEGORY_ID",
                 "ASSIGNED_BY_ID", "CONTACT_ID", "COMPANY_ID",
                 "OPPORTUNITY", "DATE_CREATE", "CLOSEDATE",
-                "DATE_MODIFY", "UF_*",
+                "DATE_MODIFY", "STAGE_SEMANTIC_ID",
+                settings.BX_DEAL_REJECTION_FIELD,
+                settings.BX_DEAL_AREA_FIELD,
+                settings.BX_DEAL_IS_COPY_FIELD,
+                settings.BX_ORDER_1C_FIELD,
             ],
-            "order": {"DATE_CREATE": "DESC"},
-        }
-        return await self._fetch_all("crm.deal.list", params)
-
-    async def get_deal_stages(self, category_id: int = 7) -> list:
-        """Get deal stage names for a category."""
-        data = await self._call("crm.dealcategory.stage.list", {
-            "id": category_id
+            "order": {"ID": "ASC"},
         })
-        return data.get("result", [])
-
-    async def get_stale_deals(self, days: int = 7, category_id: int = 7) -> list:
-        """Get deals with no activity for N days."""
-        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-        params = {
-            "filter": {
-                "CATEGORY_ID": category_id,
-                "<=DATE_MODIFY": cutoff,
-                "!STAGE_SEMANTIC_ID": "S",  # Exclude won
-            },
-            "select": [
-                "ID", "TITLE", "STAGE_ID", "ASSIGNED_BY_ID",
-                "OPPORTUNITY", "DATE_MODIFY", "UF_*",
-            ],
-            "order": {"DATE_MODIFY": "ASC"},
-        }
-        return await self._fetch_all("crm.deal.list", params)
 
     # =========================================================
     # VISITS (category_id=45 — выезды)
     # =========================================================
 
-    async def get_visits(
-        self,
-        stage_id: str = None,
-        date_from: datetime = None,
-    ) -> list:
-        """Fetch visits/inspections/montages."""
-        return await self.get_deals(
-            stage_id=stage_id,
-            category_id=settings.VISITS_CATEGORY_ID,
-            date_from=date_from,
-        )
+    def get_visits(self, date_from: datetime = None) -> list:
+        filters = {"CATEGORY_ID": settings.VISITS_CATEGORY_ID}
+        if date_from:
+            filters[">=DATE_CREATE"] = date_from.isoformat()
 
-    # =========================================================
-    # TASKS (for overdue tracking)
-    # =========================================================
-
-    async def get_overdue_tasks(self, responsible_id: int = None) -> list:
-        """Get overdue tasks."""
-        filters = {
-            "<=DEADLINE": datetime.utcnow().isoformat(),
-            "!STATUS": [4, 5, 6, 7],  # Not completed/deferred
-        }
-        if responsible_id:
-            filters["RESPONSIBLE_ID"] = responsible_id
-
-        params = {
+        return self._fetch_all("crm.deal.list", {
             "filter": filters,
             "select": [
-                "ID", "TITLE", "RESPONSIBLE_ID", "DEADLINE",
-                "STATUS", "GROUP_ID", "UF_CRM_TASK",
+                "ID", "TITLE", "STAGE_ID", "CATEGORY_ID",
+                "ASSIGNED_BY_ID", "OPPORTUNITY",
+                "DATE_CREATE", "CLOSEDATE", "DATE_MODIFY",
+                "STAGE_SEMANTIC_ID",
+                settings.BX_VISIT_TYPE_FIELD,
+                settings.BX_INSPECTOR_FIELD,
+                settings.BX_INSTALLER_FIELD,
+                settings.BX_VISIT_DEAL_LINK_FIELD,
             ],
-            "order": {"DEADLINE": "ASC"},
-        }
-        return await self._fetch_all("tasks.task.list", params)
-
-    # =========================================================
-    # USERS (for mapping IDs to names)
-    # =========================================================
-
-    async def get_users(self) -> list:
-        """Get all active users."""
-        data = await self._call("user.get", {
-            "filter": {"ACTIVE": True},
+            "order": {"ID": "ASC"},
         })
-        return data.get("result", [])
-
-    async def get_user_map(self) -> dict:
-        """Get mapping: user_id -> full_name."""
-        users = await self.get_users()
-        return {
-            u["ID"]: f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip()
-            for u in users
-        }
 
     # =========================================================
-    # CALLS (for call count per manager)
+    # LEAD ACTIVITIES (for response time)
     # =========================================================
 
-    async def get_calls(
-        self,
-        date_from: datetime = None,
-        date_to: datetime = None,
-    ) -> list:
-        """Get call activities."""
-        filters = {"TYPE_ID": 2}  # Calls
-        if date_from:
-            filters[">=CREATED"] = date_from.isoformat()
-        if date_to:
-            filters["<=CREATED"] = date_to.isoformat()
-
-        params = {
-            "filter": filters,
-            "select": ["ID", "RESPONSIBLE_ID", "CREATED", "DIRECTION"],
-        }
-        return await self._fetch_all("crm.activity.list", params)
+    def get_first_activity_time(self, lead_id: int) -> datetime | None:
+        """Get the time of the first activity on a lead."""
+        data = self._call("crm.activity.list", {
+            "filter": {
+                "OWNER_TYPE_ID": 1,
+                "OWNER_ID": lead_id,
+            },
+            "order": {"CREATED": "ASC"},
+            "select": ["ID", "CREATED"],
+        })
+        activities = data.get("result", [])
+        if activities:
+            try:
+                return datetime.fromisoformat(
+                    activities[0]["CREATED"].replace("+03:00", "").replace("T", " ").split("+")[0]
+                )
+            except (KeyError, ValueError, IndexError):
+                pass
+        return None
 
 
 # Singleton
