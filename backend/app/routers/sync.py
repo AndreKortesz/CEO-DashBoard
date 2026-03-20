@@ -62,3 +62,33 @@ def trigger_sync_roistat(days_back: int = Query(30, ge=1, le=365)):
         return sync_roistat(db, days_back=days_back)
     finally:
         db.close()
+
+
+@router.get("/sync/roistat-debug")
+def debug_roistat():
+    """Debug: show raw Roistat API response."""
+    from app.services.roistat import roistat_service
+    from app.config import get_settings
+    from datetime import date, timedelta
+    s = get_settings()
+    try:
+        raw = roistat_service._call("project/analytics/data", {
+            "from": (date.today() - timedelta(days=7)).isoformat(),
+            "to": date.today().isoformat(),
+            "dimensions": ["marker_level_1"],
+            "metrics": ["visitCount", "leadCount", "cost"],
+        })
+        return {
+            "api_key_set": bool(s.ROISTAT_API_KEY),
+            "api_key_length": len(s.ROISTAT_API_KEY),
+            "project_id": s.ROISTAT_PROJECT_ID,
+            "raw_response": raw,
+        }
+    except Exception as e:
+        return {
+            "api_key_set": bool(s.ROISTAT_API_KEY),
+            "api_key_length": len(s.ROISTAT_API_KEY),
+            "project_id": s.ROISTAT_PROJECT_ID,
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
