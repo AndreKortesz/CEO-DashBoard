@@ -145,7 +145,7 @@ class Bitrix24Service:
                 "ASSIGNED_BY_ID", "CONTACT_ID", "COMPANY_ID",
                 "OPPORTUNITY", "DATE_CREATE", "CLOSEDATE",
                 "DATE_MODIFY", "STAGE_SEMANTIC_ID",
-                settings.BX_LEAD_DIRECTION_FIELD,
+                settings.BX_DEAL_DIRECTION_FIELD,
                 settings.BX_DEAL_REJECTION_FIELD,
                 settings.BX_DEAL_AREA_FIELD,
                 settings.BX_DEAL_IS_COPY_FIELD,

@@ -157,10 +157,10 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
         deal.is_repeat = bool(raw.get(settings.BX_DEAL_IS_COPY_FIELD))
         deal.updated_at = datetime.utcnow()
 
-        # Direction from "Вид услуг" — take first value only
+        # Direction from "Вид услуг" on DEALS — different field than leads!
         deal.direction = resolve_direction_first(
-            raw.get(settings.BX_LEAD_DIRECTION_FIELD),
-            settings.BX_LEAD_DIRECTION_MAP,
+            raw.get(settings.BX_DEAL_DIRECTION_FIELD),
+            settings.BX_DEAL_DIRECTION_MAP,
         )
 
         # Try to get area

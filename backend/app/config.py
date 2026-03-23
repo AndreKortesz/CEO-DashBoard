@@ -63,14 +63,33 @@ class Settings:
     BX_LEAD_AREA_FIELD: str = "UF_CRM_1632425986529"
 
     # --- Bitrix24 UF field IDs (from crm.deal.fields) ---
+    # "Вид услуг" on DEALS — different field ID and enum IDs than leads!
+    BX_DEAL_DIRECTION_FIELD: str = "UF_CRM_64DC6A0DC67D3"
+    BX_DEAL_DIRECTION_MAP: dict = {
+        "4111": "Усиление связи",      # УСС
+        "4113": "Видеонаблюдение",      # СВН
+        "4115": "Интернет",
+        "4117": "Wi-Fi",                # Бесшовный интернет
+        "4119": "Охранная система",
+        "7219": "СКУД",
+        "4121": "Прочее",
+    }
     # "Тип выезда" on deals in visits funnel (cat 45) — enumeration
     BX_VISIT_TYPE_FIELD: str = "UF_CRM_1729503974803"
     BX_VISIT_TYPE_MAP: dict = {
-        "5117": "О",       # Осмотр
-        "5119": "М",       # Монтаж
-        "5121": "Г",       # Гарантия
-        "5123": "Диагн",   # Диагностика
-        "5125": "О",       # Повторный осмотр
+        "4311": "О",       # Осмотр
+        "4313": "М",       # Монтаж
+        "4307": "Г",       # Гарантия
+        "4309": "Диагн",   # Диагностика
+        "7221": "М",       # Домонтаж (считаем как монтаж)
+        "4315": "О",       # Повторный осмотр
+        "4317": "Прочее",
+        # Also keep old IDs from crm.lead.fields in case they appear
+        "5117": "О",
+        "5119": "М",
+        "5121": "Г",
+        "5123": "Диагн",
+        "5125": "О",
         "5127": "Прочее",
     }
     # "Осмотр произвел" — employee ID
