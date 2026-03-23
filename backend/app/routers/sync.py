@@ -4,10 +4,16 @@ Triggers loading data from Bitrix24 and Roistat into PostgreSQL.
 """
 from fastapi import APIRouter, Query
 from datetime import datetime
-from app.services.sync import run_full_sync, sync_leads, sync_deals, sync_visits, sync_roistat
+from app.services.sync import run_full_sync, sync_leads, sync_deals, sync_visits, sync_roistat, get_sync_status
 from app.database import SessionLocal
 
 router = APIRouter()
+
+
+@router.get("/sync/status")
+def sync_status():
+    """Get current sync status — use this to check data freshness."""
+    return get_sync_status()
 
 
 @router.post("/sync/run")

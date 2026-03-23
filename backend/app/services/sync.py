@@ -14,6 +14,30 @@ from app.services.roistat import roistat_service as roistat
 
 settings = get_settings()
 
+# Global sync status — accessible from API endpoints
+_sync_status = {
+    "last_sync_at": None,
+    "last_sync_duration_sec": None,
+    "last_sync_status": "never",
+    "last_sync_error": None,
+    "is_running": False,
+}
+
+
+def get_sync_status() -> dict:
+    """Get current sync status for API responses."""
+    from datetime import datetime
+    status = dict(_sync_status)
+    if status["last_sync_at"]:
+        age_sec = (datetime.utcnow() - status["last_sync_at"]).total_seconds()
+        status["data_age_minutes"] = round(age_sec / 60, 1)
+        status["is_stale"] = age_sec > 20 * 60  # stale if >20 min
+        status["last_sync_at"] = status["last_sync_at"].isoformat()
+    else:
+        status["data_age_minutes"] = None
+        status["is_stale"] = True
+    return status
+
 
 def parse_dt(val) -> datetime | None:
     """Parse Bitrix24 datetime string to Python datetime."""
@@ -316,7 +340,10 @@ def sync_roistat(db: Session, days_back: int = 30) -> dict:
 
 def run_full_sync(days_back: int = 90) -> dict:
     """Run full synchronization of all Phase 1 data sources."""
-    print(f"[SYNC] === Full sync started at {datetime.utcnow().isoformat()} ===")
+    global _sync_status
+    started = datetime.utcnow()
+    _sync_status["is_running"] = True
+    print(f"[SYNC] === Full sync started at {started.isoformat()} ===")
     db = SessionLocal()
     results = {}
 
@@ -326,14 +353,23 @@ def run_full_sync(days_back: int = 90) -> dict:
         results["visits"] = sync_visits(db, days_back=days_back)
         results["roistat"] = sync_roistat(db, days_back=30)
         results["status"] = "ok"
+        _sync_status["last_sync_status"] = "ok"
+        _sync_status["last_sync_error"] = None
     except Exception as e:
         results["status"] = "error"
         results["error"] = str(e)
+        _sync_status["last_sync_status"] = "error"
+        _sync_status["last_sync_error"] = str(e)
         print(f"[SYNC] ERROR: {e}")
         import traceback
         traceback.print_exc()
     finally:
         db.close()
+        _sync_status["is_running"] = False
+        _sync_status["last_sync_at"] = datetime.utcnow()
+        _sync_status["last_sync_duration_sec"] = round(
+            (datetime.utcnow() - started).total_seconds(), 1
+        )
 
     print(f"[SYNC] === Full sync finished: {results.get('status')} ===")
     return results

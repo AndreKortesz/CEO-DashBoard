@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from app.database import get_db
 from app.models import Lead, Deal, Visit, RoistatChannel, SalesPlan
+from app.services.sync import get_sync_status
 from app.config import get_settings
 
 router = APIRouter()
@@ -148,4 +149,5 @@ def get_pulse(db: Session = Depends(get_db)):
             "fact": monthly_gross_val,
             "percent": round(monthly_gross_val / plan_amount * 100, 1) if plan_amount > 0 else 0,
         },
+        "sync": get_sync_status(),
     }
