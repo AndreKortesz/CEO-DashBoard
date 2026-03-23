@@ -190,13 +190,28 @@ def get_conversions(
         all_leads = (db.execute(leads_q)).scalars().all()
         for l in all_leads:
             groups[l.direction or "Неизвестно"]["leads"] += 1
-        # For visits, we need deal direction — join would be better, simplified here
+
+        # Build deal_id -> direction map from deals table
+        from app.models import Deal as DealModel
+        deal_directions = {}
+        deal_rows = db.execute(
+            select(DealModel.id, DealModel.direction).where(
+                DealModel.direction.isnot(None),
+                DealModel.direction != "",
+            )
+        ).all()
+        for row in deal_rows:
+            deal_directions[row[0]] = row[1]
+
+        # Assign inspections/montages to direction via linked deal
         for v in inspections:
             if v.deal_id:
-                groups["Общее"]["inspections"].add(v.deal_id)
+                direction = deal_directions.get(v.deal_id, "Неизвестно")
+                groups[direction]["inspections"].add(v.deal_id)
         for v in montages:
             if v.deal_id:
-                groups["Общее"]["montages"].add(v.deal_id)
+                direction = deal_directions.get(v.deal_id, "Неизвестно")
+                groups[direction]["montages"].add(v.deal_id)
 
     result = {}
     for key, data in groups.items():

@@ -30,13 +30,25 @@ def parse_dt(val) -> datetime | None:
 
 
 def resolve_direction(raw_value, direction_map: dict) -> str:
-    """Resolve enumeration ID(s) to direction name(s)."""
+    """Resolve enumeration ID(s) to direction name(s) — comma-separated."""
     if not raw_value:
         return ""
-    # Can be a single ID or list of IDs
     if isinstance(raw_value, list):
         names = [direction_map.get(str(v), "") for v in raw_value]
         return ", ".join(n for n in names if n) or ""
+    return direction_map.get(str(raw_value), "")
+
+
+def resolve_direction_first(raw_value, direction_map: dict) -> str:
+    """Resolve enumeration ID(s) to FIRST direction name only."""
+    if not raw_value:
+        return ""
+    if isinstance(raw_value, list):
+        for v in raw_value:
+            name = direction_map.get(str(v), "")
+            if name:
+                return name
+        return ""
     return direction_map.get(str(raw_value), "")
 
 
@@ -80,7 +92,7 @@ def sync_leads(db: Session, days_back: int = 90) -> dict:
         lead.status_name = lead_status_map.get(lead.status_id, lead.status_id)
         lead.source_id = raw.get("SOURCE_ID", "")
         lead.assigned_by = bx.resolve_user(raw.get("ASSIGNED_BY_ID"))
-        lead.direction = resolve_direction(
+        lead.direction = resolve_direction_first(
             raw.get(settings.BX_LEAD_DIRECTION_FIELD),
             settings.BX_LEAD_DIRECTION_MAP,
         )
@@ -144,6 +156,12 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
         deal.loss_reason = raw.get(settings.BX_DEAL_REJECTION_FIELD, "")
         deal.is_repeat = bool(raw.get(settings.BX_DEAL_IS_COPY_FIELD))
         deal.updated_at = datetime.utcnow()
+
+        # Direction from "Вид услуг" — take first value only
+        deal.direction = resolve_direction_first(
+            raw.get(settings.BX_LEAD_DIRECTION_FIELD),
+            settings.BX_LEAD_DIRECTION_MAP,
+        )
 
         # Try to get area
         area_raw = raw.get(settings.BX_DEAL_AREA_FIELD, "")
