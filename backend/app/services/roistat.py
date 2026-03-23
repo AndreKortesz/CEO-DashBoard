@@ -55,19 +55,28 @@ class RoistatService:
         })
 
         channels = []
-        items = data.get("data", [])
-        if isinstance(items, dict):
-            items = items.get("items", items.get("data", []))
+
+        # Roistat structure: data[0].items[] — each item has metrics[] and dimensions{}
+        raw_data = data.get("data", [])
+        items = []
+        if isinstance(raw_data, list) and len(raw_data) > 0:
+            first = raw_data[0]
+            if isinstance(first, dict) and "items" in first:
+                items = first["items"]
+            else:
+                items = raw_data
 
         for item in items:
-            # Roistat returns metrics as array of {metric_name, value} or as flat dict
+            # Parse metrics array: [{metric_name, value}, ...]
             metrics = {}
-            if "metrics" in item:
-                for m in item["metrics"]:
-                    if isinstance(m, dict):
-                        metrics[m.get("metric_name", "")] = m.get("value", 0)
-            else:
-                metrics = item
+            for m in item.get("metrics", []):
+                if isinstance(m, dict):
+                    metrics[m.get("metric_name", "")] = m.get("value", 0)
+
+            # Channel name from dimensions.marker_level_1.title
+            dims = item.get("dimensions", {})
+            marker = dims.get("marker_level_1", {})
+            channel_name = marker.get("title", "Unknown") if isinstance(marker, dict) else "Unknown"
 
             cost_raw = float(metrics.get("marketing_cost", 0) or 0)
             leads = int(float(metrics.get("leads", 0) or 0))
@@ -81,7 +90,7 @@ class RoistatService:
             roi = round((revenue - cost_with_vat) / cost_with_vat * 100, 1) if cost_with_vat > 0 else None
 
             channels.append({
-                "channel_name": item.get("title", "Unknown"),
+                "channel_name": channel_name,
                 "visits": visits,
                 "leads": leads,
                 "calls": 0,
