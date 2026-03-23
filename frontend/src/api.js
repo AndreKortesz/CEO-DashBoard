@@ -1,17 +1,19 @@
 /**
  * API client for CEO Dashboard backend.
- * Handles all fetch calls with error handling.
+ * Handles all fetch calls with error handling + auth token.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
+const API_TOKEN = import.meta.env.VITE_API_TOKEN || ''
 
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`
+  const headers = { 'Content-Type': 'application/json', ...options.headers }
+  if (API_TOKEN) {
+    headers['Authorization'] = `Bearer ${API_TOKEN}`
+  }
   try {
-    const res = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options,
-    })
+    const res = await fetch(url, { headers, ...options })
     if (!res.ok) {
       throw new Error(`API ${res.status}: ${res.statusText}`)
     }

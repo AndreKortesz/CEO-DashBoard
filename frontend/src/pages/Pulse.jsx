@@ -31,10 +31,14 @@ export default function Pulse() {
   const m = data?.metrics || {}
   const rf = data?.red_flags || {}
   const pf = data?.plan_fact || {}
+  const sync = data?.sync || {}
 
   return (
     <PageWrapper title="Mos-GSM — утренний пульс">
-      <div className="text-xs text-gray-500 -mt-3 mb-5 capitalize">{today}</div>
+      <div className="flex items-center justify-between -mt-3 mb-5">
+        <div className="text-xs text-gray-500 capitalize">{today}</div>
+        <SyncBadge sync={sync} />
+      </div>
 
       {/* AI Summary */}
       <div className="bg-gray-50 border-l-[3px] border-blue-500 rounded-r-lg p-4 mb-6 text-sm leading-relaxed text-gray-800">
@@ -55,6 +59,12 @@ export default function Pulse() {
         <MetricCard label="Новых лидов" value={m.leads_yesterday} />
         <MetricCard label="Закрыто сделок" value={m.closed_deals_yesterday} />
         <MetricCard label="Монтажей завершено" value={m.montages_yesterday} />
+      </div>
+      <div className="grid grid-cols-4 gap-3 mb-6">
+        <MetricCard label="Лидов за неделю" value={m.leads_week} />
+        <MetricCard label="Средний чек монтажа" value={formatMoney(m.avg_montage_check)} />
+        <MetricCard label="Активных лидов" value={data?.funnel?.active_leads} />
+        <MetricCard label="Активных сделок" value={data?.funnel?.active_deals} />
       </div>
 
       {/* Red flags */}
@@ -102,4 +112,33 @@ function formatMoney(v) {
   if (v >= 1000000) return `${(v / 1000000).toFixed(1)}М`
   if (v >= 1000) return `${Math.round(v / 1000)}К`
   return `${Math.round(v)}`
+}
+
+function SyncBadge({ sync }) {
+  if (!sync || sync.last_sync_status === 'never') {
+    return (
+      <span className="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700">
+        ⏳ Ожидание первой синхронизации...
+      </span>
+    )
+  }
+  if (sync.is_stale) {
+    return (
+      <span className="text-xs px-2 py-1 rounded bg-red-50 text-red-700">
+        Данные устарели — {Math.round(sync.data_age_minutes)} мин назад
+      </span>
+    )
+  }
+  if (sync.last_sync_status === 'error') {
+    return (
+      <span className="text-xs px-2 py-1 rounded bg-red-50 text-red-700">
+        Ошибка синхронизации
+      </span>
+    )
+  }
+  return (
+    <span className="text-xs px-2 py-1 rounded bg-emerald-50 text-emerald-700">
+      Обновлено {Math.round(sync.data_age_minutes)} мин назад
+    </span>
+  )
 }

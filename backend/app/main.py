@@ -42,8 +42,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        # Skip auth for public paths and CORS preflight
-        if path in PUBLIC_PATHS or request.method == "OPTIONS":
+        # Only protect /api/* paths. Everything else (frontend, health, docs) is public
+        if not path.startswith("/api/"):
+            return await call_next(request)
+
+        # Skip auth for CORS preflight
+        if request.method == "OPTIONS":
             return await call_next(request)
 
         # Check Authorization header
@@ -138,3 +142,23 @@ app.include_router(funnel.router, prefix="/api", tags=["Funnel"])
 app.include_router(people.router, prefix="/api", tags=["People"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(sync.router, prefix="/api", tags=["Sync"])
+
+
+# --- Serve React frontend (built static files) ---
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
+
+if os.path.isdir(FRONTEND_DIR):
+    # Serve static assets (JS, CSS, images)
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="static")
+
+    # Catch-all: serve index.html for any non-API route (SPA routing)
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
