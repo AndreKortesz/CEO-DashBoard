@@ -45,6 +45,7 @@ class RoistatService:
         data = self._call("project/analytics/data", {
             "from": date_from.isoformat(),
             "to": date_to.isoformat(),
+            "period": "all",
             "dimensions": ["marker_level_1"],
             "metrics": [
                 "visitCount", "visits2leads", "leadCount",

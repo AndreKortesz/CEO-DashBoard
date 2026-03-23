@@ -75,6 +75,7 @@ def debug_roistat():
         raw = roistat_service._call("project/analytics/data", {
             "from": (date.today() - timedelta(days=7)).isoformat(),
             "to": date.today().isoformat(),
+            "period": "all",
             "dimensions": ["marker_level_1"],
             "metrics": ["visitCount", "leadCount", "cost"],
         })
