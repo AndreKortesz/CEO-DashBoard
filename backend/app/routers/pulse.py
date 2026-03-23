@@ -127,6 +127,18 @@ def get_pulse(db: Session = Depends(get_db)):
     )
     monthly_gross_val = monthly_gross.scalar() or 0
 
+    # --- Avg montage check (excluding deals below threshold) ---
+    min_check = settings.MONTAGE_MIN_CHECK
+    avg_check = db.execute(
+        select(func.avg(Deal.amount)).where(
+            Deal.is_won == True,
+            Deal.amount >= min_check,
+            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+        )
+    )
+    avg_check_val = avg_check.scalar()
+    avg_check_val = round(avg_check_val, 0) if avg_check_val else 0
+
     return {
         "date": today.isoformat(),
         "metrics": {
@@ -135,6 +147,7 @@ def get_pulse(db: Session = Depends(get_db)):
             "leads_week": leads_week_val,
             "closed_deals_yesterday": closed_yesterday_val,
             "montages_yesterday": montages_yesterday_val,
+            "avg_montage_check": avg_check_val,
         },
         "red_flags": {
             "stale_deals_7d": stale_deals_val,

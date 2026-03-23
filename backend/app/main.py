@@ -6,6 +6,7 @@ import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import get_settings
 from app.database import init_db
@@ -16,6 +17,9 @@ settings = get_settings()
 SYNC_INTERVAL_SEC = 15 * 60  # 15 minutes
 _sync_timer = None
 
+# Paths that don't require auth
+PUBLIC_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+
 
 class UTF8Middleware(BaseHTTPMiddleware):
     """Ensure all JSON responses have charset=utf-8."""
@@ -25,6 +29,37 @@ class UTF8Middleware(BaseHTTPMiddleware):
         if "application/json" in content_type and "charset" not in content_type:
             response.headers["content-type"] = "application/json; charset=utf-8"
         return response
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Bearer token authentication for /api/* endpoints.
+    If API_TOKEN env var is empty — auth is disabled (open access).
+    """
+    async def dispatch(self, request: Request, call_next):
+        token = settings.API_TOKEN
+        if not token:
+            # No token configured — skip auth
+            return await call_next(request)
+
+        path = request.url.path
+        # Skip auth for public paths and CORS preflight
+        if path in PUBLIC_PATHS or request.method == "OPTIONS":
+            return await call_next(request)
+
+        # Check Authorization header
+        auth = request.headers.get("authorization", "")
+        if auth == f"Bearer {token}":
+            return await call_next(request)
+
+        # Check ?token= query parameter (for browser testing)
+        query_token = request.query_params.get("token", "")
+        if query_token == token:
+            return await call_next(request)
+
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or missing API token"},
+        )
 
 
 def _run_scheduled_sync():
@@ -71,6 +106,9 @@ app = FastAPI(
 
 # UTF-8 for all JSON responses
 app.add_middleware(UTF8Middleware)
+
+# API token auth (only active if API_TOKEN is set in env)
+app.add_middleware(AuthMiddleware)
 
 # CORS for React frontend
 app.add_middleware(

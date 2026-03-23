@@ -127,8 +127,8 @@ def sync_leads(db: Session, days_back: int = 90) -> dict:
         lead.rejection_reason = raw.get(settings.BX_LEAD_REJECTION_FIELD, "")
         lead.updated_at = datetime.utcnow()
 
-        # LAST_ACTIVITY_TIME serves as first_activity proxy
-        lead.first_activity_at = parse_dt(raw.get("LAST_ACTIVITY_TIME"))
+        # DATE_MODIFY = first time manager touched the lead (better proxy than LAST_ACTIVITY)
+        lead.first_activity_at = parse_dt(raw.get("DATE_MODIFY"))
 
         if is_new:
             db.add(lead)

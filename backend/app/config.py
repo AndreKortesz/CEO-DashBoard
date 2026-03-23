@@ -11,6 +11,7 @@ class Settings:
     APP_NAME: str = "CEO Dashboard - Mos-GSM"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production")
+    API_TOKEN: str = os.getenv("API_TOKEN", "")  # Bearer token for API auth
 
     # --- Database ---
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://localhost/ceo_dashboard")
