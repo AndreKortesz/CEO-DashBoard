@@ -49,20 +49,31 @@ class RoistatService:
             },
             "dimensions": ["marker_level_1"],
             "metrics": [
-                "visitCount", "visits2leads", "leadCount",
-                "callCount", "costPerLead", "saleCount",
-                "salesAmount", "cost",
+                "visits", "leads", "sales",
+                "marketing_cost", "revenue",
             ],
         })
 
         channels = []
-        for item in data.get("data", []):
-            cost_raw = float(item.get("cost", 0) or 0)
-            leads = int(item.get("leadCount", 0) or 0)
-            visits = int(item.get("visitCount", 0) or 0)
-            sales = int(item.get("saleCount", 0) or 0)
-            revenue = float(item.get("salesAmount", 0) or 0)
-            calls = int(item.get("callCount", 0) or 0)
+        items = data.get("data", [])
+        if isinstance(items, dict):
+            items = items.get("items", items.get("data", []))
+
+        for item in items:
+            # Roistat returns metrics as array of {metric_name, value} or as flat dict
+            metrics = {}
+            if "metrics" in item:
+                for m in item["metrics"]:
+                    if isinstance(m, dict):
+                        metrics[m.get("metric_name", "")] = m.get("value", 0)
+            else:
+                metrics = item
+
+            cost_raw = float(metrics.get("marketing_cost", 0) or 0)
+            leads = int(float(metrics.get("leads", 0) or 0))
+            visits = int(float(metrics.get("visits", 0) or 0))
+            sales = int(float(metrics.get("sales", 0) or 0))
+            revenue = float(metrics.get("revenue", 0) or 0)
 
             cost_with_vat = round(cost_raw * self.vat_mult, 2)
             cpl = round(cost_with_vat / leads, 2) if leads > 0 else 0
@@ -73,7 +84,7 @@ class RoistatService:
                 "channel_name": item.get("title", "Unknown"),
                 "visits": visits,
                 "leads": leads,
-                "calls": calls,
+                "calls": 0,
                 "cost_without_vat": cost_raw,
                 "cost_with_vat": cost_with_vat,
                 "cpl": cpl,

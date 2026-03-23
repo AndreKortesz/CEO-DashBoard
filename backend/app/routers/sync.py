@@ -78,7 +78,7 @@ def debug_roistat():
                 "to": f"{date.today().isoformat()}T23:59:59+0300",
             },
             "dimensions": ["marker_level_1"],
-            "metrics": ["visitCount", "leadCount", "cost"],
+            "metrics": ["visits", "leads", "marketing_cost"],
         })
         return {
             "api_key_set": bool(s.ROISTAT_API_KEY),
