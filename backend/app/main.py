@@ -1,10 +1,11 @@
 """
-CEO Dashboard — Mos-GSM
+CEO Dashboard - Mos-GSM
 Main FastAPI application.
 """
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import get_settings
 from app.database import init_db
 
@@ -12,10 +13,19 @@ from app.database import init_db
 settings = get_settings()
 
 
+class UTF8Middleware(BaseHTTPMiddleware):
+    """Ensure all JSON responses have charset=utf-8."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type and "charset" not in content_type:
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown events."""
-    # Initialize database tables
     init_db()
     yield
 
@@ -25,6 +35,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# UTF-8 for all JSON responses
+app.add_middleware(UTF8Middleware)
 
 # CORS for React frontend
 app.add_middleware(
