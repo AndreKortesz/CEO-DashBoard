@@ -2,6 +2,7 @@
 CEO Dashboard - Mos-GSM
 Main FastAPI application.
 """
+import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,9 @@ from app.database import init_db
 
 
 settings = get_settings()
+
+SYNC_INTERVAL_SEC = 15 * 60  # 15 minutes
+_sync_timer = None
 
 
 class UTF8Middleware(BaseHTTPMiddleware):
@@ -23,11 +27,40 @@ class UTF8Middleware(BaseHTTPMiddleware):
         return response
 
 
+def _run_scheduled_sync():
+    """Background sync task — runs in a separate thread."""
+    global _sync_timer
+    try:
+        from app.services.sync import run_full_sync
+        print("[SCHEDULER] Auto-sync started...")
+        result = run_full_sync(days_back=7)
+        print(f"[SCHEDULER] Auto-sync finished: {result}")
+    except Exception as e:
+        print(f"[SCHEDULER] Auto-sync error: {e}")
+    finally:
+        # Schedule next run
+        _sync_timer = threading.Timer(SYNC_INTERVAL_SEC, _run_scheduled_sync)
+        _sync_timer.daemon = True
+        _sync_timer.start()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown events."""
+    global _sync_timer
     init_db()
+
+    # Start background sync after 60 sec delay (let server warm up)
+    _sync_timer = threading.Timer(60, _run_scheduled_sync)
+    _sync_timer.daemon = True
+    _sync_timer.start()
+    print(f"[SCHEDULER] Auto-sync scheduled every {SYNC_INTERVAL_SEC // 60} min (first run in 60 sec)")
+
     yield
+
+    # Cleanup on shutdown
+    if _sync_timer:
+        _sync_timer.cancel()
 
 
 app = FastAPI(
