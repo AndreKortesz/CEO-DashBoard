@@ -186,6 +186,38 @@ def get_conversions(
         for v in montages:
             if v.deal_id:
                 groups[v.assigned_manager]["montages"].add(v.deal_id)
+
+        # Separate ROP from managers
+        rop_name = settings.ROP
+        manager_names = settings.MANAGERS
+        rop_data = None
+        manager_result = {}
+
+        for key, data in groups.items():
+            n_l = data["leads"]
+            n_i = len(data["inspections"])
+            n_m = len(data["montages"])
+            entry = {
+                "leads": n_l,
+                "inspections": n_i,
+                "montages": n_m,
+                "conv_lead_inspection": round(n_i / n_l * 100, 1) if n_l else 0,
+                "conv_inspection_montage": round(n_m / n_i * 100, 1) if n_i else 0,
+                "conv_lead_montage": round(n_m / n_l * 100, 1) if n_l else 0,
+            }
+            if key == rop_name:
+                rop_data = entry
+            elif key in manager_names:
+                manager_result[key] = entry
+            else:
+                # Unknown users (ID:36183 etc) — include in managers table
+                manager_result[key] = entry
+
+        return {
+            "group_by": group_by,
+            "data": manager_result,
+            "rop": {"name": rop_name, "metrics": rop_data} if rop_data else None,
+        }
     elif group_by == "direction":
         all_leads = (db.execute(leads_q)).scalars().all()
         for l in all_leads:

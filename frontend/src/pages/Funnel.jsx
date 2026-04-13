@@ -64,7 +64,7 @@ function MarketingTab({ data }) {
     <>
       <SectionLabel>Маркетинг — {data.period}</SectionLabel>
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <MetricCard label="Расход на рекламу" value={`${Math.round(t.cost / 1000)}К`} sub="с НДС" />
+        <MetricCard label="Расход на рекламу" value={formatExact(t.cost)} sub="с НДС" />
         <MetricCard label="Лидов" value={t.leads} />
         <MetricCard label="CPL средний" value={`${Math.round(t.cpl)} р.`} />
         <MetricCard label="ROI маркетинга" value={t.roi != null ? `${t.roi}%` : '—'} trend={t.roi > 0 ? 'up' : 'down'} />
@@ -106,9 +106,47 @@ function MarketingTab({ data }) {
 }
 
 function SalesTab({ sales, convManager }) {
+  const rop = convManager?.rop
   return (
     <>
       <SectionLabel>Конверсия лид → осмотр → монтаж</SectionLabel>
+
+      {/* ROP block */}
+      {rop?.metrics && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="text-sm font-medium text-gray-900">{rop.name}</div>
+            <Badge variant="info">РОП</Badge>
+          </div>
+          <div className="text-xs text-gray-600 mb-3">
+            Все лиды приходят на РОПа, он распределяет менеджерам. Конверсии РОПа отражают качество нераспределённых лидов.
+          </div>
+          <div className="grid grid-cols-4 gap-3 text-center">
+            <div>
+              <div className="text-base font-medium text-gray-900">{rop.metrics.leads}</div>
+              <div className="text-xs text-gray-500">Лидов получено</div>
+            </div>
+            <div>
+              <div className="text-base font-medium text-gray-900">{rop.metrics.inspections}</div>
+              <div className="text-xs text-gray-500">Осмотров</div>
+            </div>
+            <div>
+              <div className="text-base font-medium text-gray-900">{rop.metrics.montages}</div>
+              <div className="text-xs text-gray-500">Монтажей</div>
+            </div>
+            <div>
+              <div className="text-base font-medium text-gray-900">
+                <Badge variant={rop.metrics.conv_lead_montage >= 5 ? 'success' : 'warning'}>
+                  {rop.metrics.conv_lead_montage}%
+                </Badge>
+              </div>
+              <div className="text-xs text-gray-500">Общая конв.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Managers table */}
       {convManager?.data && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 mb-4">
           <div className="text-sm font-medium text-gray-900 mb-3">По менеджерам</div>
@@ -210,4 +248,9 @@ function formatM(v) {
   if (v >= 1000000) return `${(v / 1000000).toFixed(1)}М`
   if (v >= 1000) return `${Math.round(v / 1000)}К`
   return `${Math.round(v)}`
+}
+
+function formatExact(v) {
+  if (!v && v !== 0) return '—'
+  return `${Math.round(v).toLocaleString('ru-RU')} р.`
 }
