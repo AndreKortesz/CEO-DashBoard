@@ -119,20 +119,24 @@ function SalesTab({ sales, convManager }) {
             <Badge variant="info">РОП</Badge>
           </div>
           <div className="text-xs text-gray-600 mb-3">
-            Все лиды приходят на РОПа, он распределяет менеджерам. Конверсии РОПа отражают качество нераспределённых лидов.
+            Лиды, которые сейчас числятся на РОПе. Распределённые лиды учитываются в таблице менеджеров.
           </div>
-          <div className="grid grid-cols-4 gap-3 text-center">
+          <div className="grid grid-cols-5 gap-3 text-center">
             <div>
-              <div className="text-base font-medium text-gray-900">{rop.metrics.leads}</div>
-              <div className="text-xs text-gray-500">Лидов получено</div>
+              <div className="text-base font-medium text-gray-900">{rop.breakdown?.total ?? rop.metrics.leads}</div>
+              <div className="text-xs text-gray-500">Всего лидов</div>
             </div>
             <div>
-              <div className="text-base font-medium text-gray-900">{rop.metrics.inspections}</div>
-              <div className="text-xs text-gray-500">Осмотров</div>
+              <div className="text-base font-medium text-amber-600">{rop.breakdown?.in_work ?? '—'}</div>
+              <div className="text-xs text-gray-500">В работе</div>
             </div>
             <div>
-              <div className="text-base font-medium text-gray-900">{rop.metrics.montages}</div>
-              <div className="text-xs text-gray-500">Монтажей</div>
+              <div className="text-base font-medium text-emerald-600">{rop.breakdown?.converted ?? '—'}</div>
+              <div className="text-xs text-gray-500">Конвертировано</div>
+            </div>
+            <div>
+              <div className="text-base font-medium text-red-600">{rop.breakdown?.rejected ?? '—'}</div>
+              <div className="text-xs text-gray-500">Отказ</div>
             </div>
             <div>
               <div className="text-base font-medium text-gray-900">

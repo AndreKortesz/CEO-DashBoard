@@ -213,10 +213,28 @@ def get_conversions(
                 # Unknown users (ID:36183 etc) — include in managers table
                 manager_result[key] = entry
 
+        # ROP lead breakdown by status
+        rop_breakdown = None
+        if rop_data:
+            rop_leads = [l for l in all_leads if l.assigned_by == rop_name]
+            converted = sum(1 for l in rop_leads if l.is_converted)
+            rejected = sum(1 for l in rop_leads if not l.is_converted and l.rejection_reason)
+            in_work = len(rop_leads) - converted - rejected
+            rop_breakdown = {
+                "total": len(rop_leads),
+                "in_work": in_work,
+                "converted": converted,
+                "rejected": rejected,
+            }
+
         return {
             "group_by": group_by,
             "data": manager_result,
-            "rop": {"name": rop_name, "metrics": rop_data} if rop_data else None,
+            "rop": {
+                "name": rop_name,
+                "metrics": rop_data,
+                "breakdown": rop_breakdown,
+            } if rop_data else None,
         }
     elif group_by == "direction":
         all_leads = (db.execute(leads_q)).scalars().all()
