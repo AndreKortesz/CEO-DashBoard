@@ -27,11 +27,11 @@ def get_pulse(db: Session = Depends(get_db)):
     month_start = today.replace(day=1)
 
     # --- Revenue yesterday (closed deals) ---
-    # Use won_at = real date of transition to C7:WON (from crm.stagehistory.list)
+    # CLOSEDATE = correct close date in Bitrix24 (matches UI filter "Дата завершения")
     revenue_yesterday = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
-            func.date(Deal.won_at) == yesterday,
+            func.date(Deal.closed_at) == yesterday,
         )
     )
     revenue_yesterday_val = revenue_yesterday.scalar() or 0
@@ -56,7 +56,7 @@ def get_pulse(db: Session = Depends(get_db)):
     closed_yesterday = db.execute(
         select(func.count(Deal.id)).where(
             Deal.is_won == True,
-            func.date(Deal.won_at) == yesterday,
+            func.date(Deal.closed_at) == yesterday,
         )
     )
     closed_yesterday_val = closed_yesterday.scalar() or 0
@@ -119,11 +119,11 @@ def get_pulse(db: Session = Depends(get_db)):
     plan_row = plan.scalar_one_or_none()
     plan_amount = plan_row.plan_amount if plan_row else 0
 
-    # Monthly revenue (by deals) — use won_at = real date of C7:WON transition
+    # Monthly revenue (by deals) — CLOSEDATE = "Дата завершения" in Bitrix24
     monthly_gross = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
-            Deal.won_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
         )
     )
     monthly_gross_val = monthly_gross.scalar() or 0
@@ -134,7 +134,7 @@ def get_pulse(db: Session = Depends(get_db)):
         select(func.avg(Deal.amount)).where(
             Deal.is_won == True,
             Deal.amount >= min_check,
-            Deal.won_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
         )
     )
     avg_check_val = avg_check.scalar()
