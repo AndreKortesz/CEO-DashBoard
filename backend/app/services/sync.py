@@ -124,6 +124,7 @@ def sync_leads(db: Session, days_back: int = 90) -> dict:
         lead.created_at = parse_dt(raw.get("DATE_CREATE"))
         lead.closed_at = parse_dt(raw.get("DATE_CLOSED"))
         lead.is_converted = raw.get("STATUS_SEMANTIC_ID") == "S"
+        lead.is_rejected = raw.get("STATUS_SEMANTIC_ID") == "F"
         lead.rejection_reason = raw.get(settings.BX_LEAD_REJECTION_FIELD, "")
         lead.updated_at = datetime.utcnow()
 

@@ -32,6 +32,7 @@ class Lead(Base):
     closed_at = Column(DateTime, nullable=True)
     first_activity_at = Column(DateTime, nullable=True)  # For lead response time
     is_converted = Column(Boolean, default=False)
+    is_rejected = Column(Boolean, default=False)         # STATUS_SEMANTIC_ID == "F"
     rejection_reason = Column(String(200), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

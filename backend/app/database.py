@@ -40,6 +40,7 @@ def init_db():
         inspector = inspect(engine)
         migrations = [
             ("deals", "won_at", "TIMESTAMP"),
+            ("leads", "is_rejected", "BOOLEAN DEFAULT FALSE"),
         ]
         with engine.begin() as conn:
             for table, column, col_type in migrations:

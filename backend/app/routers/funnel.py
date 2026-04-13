@@ -213,12 +213,12 @@ def get_conversions(
                 # Unknown users (ID:36183 etc) — include in managers table
                 manager_result[key] = entry
 
-        # ROP lead breakdown by status
+        # ROP lead breakdown by status (using STATUS_SEMANTIC_ID: S=success, F=fail, P=process)
         rop_breakdown = None
         if rop_data:
             rop_leads = [l for l in all_leads if l.assigned_by == rop_name]
             converted = sum(1 for l in rop_leads if l.is_converted)
-            rejected = sum(1 for l in rop_leads if not l.is_converted and l.rejection_reason)
+            rejected = sum(1 for l in rop_leads if l.is_rejected)
             in_work = len(rop_leads) - converted - rejected
             rop_breakdown = {
                 "total": len(rop_leads),
