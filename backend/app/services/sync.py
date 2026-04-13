@@ -238,24 +238,22 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
             deals_with_real_won_at.add(deal_id)
             won_updated += 1
 
-    # Fallback: ONLY for is_won deals that stagehistory didn't cover
+    # No fallback: if stagehistory didn't find the date, won_at stays None
+    # (deal was closed too long ago to be relevant for current month metrics)
     orphan_won = db.execute(
-        sa_select(Deal).where(
+        sa_select(Deal.id).where(
             Deal.is_won == True,
             Deal.won_at.is_(None),
-            Deal.last_activity_at.isnot(None),
         )
     ).scalars().all()
-    for deal in orphan_won:
-        deal.won_at = deal.last_activity_at
-        won_fallback += 1
+    won_without_date = len(orphan_won)
 
     db.commit()
 
     result = {
         "deals_new": count_new, "deals_updated": count_updated,
         "deals_total": len(raw_deals),
-        "won_dates_set": won_updated, "won_dates_fallback": won_fallback,
+        "won_dates_set": won_updated, "won_no_date": won_without_date,
     }
     print(f"[SYNC] Deals: {result}")
     return result
