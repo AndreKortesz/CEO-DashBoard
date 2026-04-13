@@ -92,7 +92,7 @@ export default function Pulse() {
       </div>
 
       {/* Plan-fact */}
-      <SectionLabel>План–факт (валовый доход)</SectionLabel>
+      <SectionLabel>План–факт (выручка по сделкам)</SectionLabel>
       <div className="grid grid-cols-3 gap-3 mb-6">
         <MetricCard label="План" value={formatMoney(pf.plan)} />
         <MetricCard

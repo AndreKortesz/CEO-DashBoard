@@ -60,6 +60,7 @@ class Deal(Base):
     last_activity_at = Column(DateTime, nullable=True)
     is_won = Column(Boolean, default=False)
     is_lost = Column(Boolean, default=False)
+    won_at = Column(DateTime, nullable=True, index=True)  # Real date of transition to C7:WON (from stagehistory)
     loss_reason = Column(String(200), nullable=True)
     area_sqm = Column(Float, nullable=True)             # Площадь м2
     is_repeat = Column(Boolean, default=False)           # Повторная сделка

@@ -214,7 +214,37 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
             count_updated += 1
 
     db.commit()
-    result = {"deals_new": count_new, "deals_updated": count_updated, "deals_total": len(raw_deals)}
+
+    # --- Populate won_at from stage history (real date of C7:WON transition) ---
+    won_map = bx.get_won_dates(category_id=settings.DEALS_CATEGORY_ID, date_from=date_from)
+    won_updated = 0
+    won_fallback = 0
+    for deal_id, won_dt in won_map.items():
+        deal = db.get(Deal, deal_id)
+        if deal and deal.is_won and deal.won_at != won_dt:
+            deal.won_at = won_dt
+            won_updated += 1
+
+    # Fallback: for is_won deals without won_at (stagehistory too old), use last_activity_at
+    from sqlalchemy import select as sa_select
+    orphan_won = db.execute(
+        sa_select(Deal).where(
+            Deal.is_won == True,
+            Deal.won_at.is_(None),
+            Deal.last_activity_at.isnot(None),
+        )
+    ).scalars().all()
+    for deal in orphan_won:
+        deal.won_at = deal.last_activity_at
+        won_fallback += 1
+
+    db.commit()
+
+    result = {
+        "deals_new": count_new, "deals_updated": count_updated,
+        "deals_total": len(raw_deals),
+        "won_dates_set": won_updated, "won_dates_fallback": won_fallback,
+    }
     print(f"[SYNC] Deals: {result}")
     return result
 

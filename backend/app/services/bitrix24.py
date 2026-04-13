@@ -181,6 +181,81 @@ class Bitrix24Service:
         })
 
     # =========================================================
+    # STAGE HISTORY — real date of transition to WON
+    # =========================================================
+
+    def get_won_dates(self, category_id: int = 7, date_from: datetime = None) -> dict:
+        """
+        Get mapping: deal_id -> won_at datetime.
+        Uses crm.stagehistory.list to find exact date when deal moved to C{cat}:WON.
+        Returns dict {deal_id: datetime}.
+        """
+        stage_won = f"C{category_id}:WON"
+        params = {
+            "entityTypeId": 2,
+            "order": {"ID": "DESC"},
+            "filter": {"STAGE_ID": stage_won},
+            "select": ["OWNER_ID", "CREATED_TIME"],
+        }
+
+        all_items = []
+        start = 0
+
+        while True:
+            params["start"] = start
+            data = self._call("crm.stagehistory.list", params)
+            items = data.get("result", {}).get("items", [])
+            if not items:
+                break
+
+            # Check if we've gone past our date_from cutoff
+            if date_from:
+                oldest_in_page = items[-1].get("CREATED_TIME", "")
+                try:
+                    oldest_dt = datetime.fromisoformat(
+                        oldest_in_page.replace("T", " ").split("+")[0]
+                    )
+                    if oldest_dt < date_from:
+                        # Keep only items within range and stop
+                        for item in items:
+                            ct = item.get("CREATED_TIME", "")
+                            try:
+                                dt = datetime.fromisoformat(ct.replace("T", " ").split("+")[0])
+                                if dt >= date_from:
+                                    all_items.append(item)
+                            except (ValueError, TypeError):
+                                pass
+                        break
+                except (ValueError, TypeError):
+                    pass
+
+            all_items.extend(items)
+
+            next_start = data.get("next")
+            if not next_start:
+                break
+            start = next_start
+            time.sleep(0.5)
+
+        # Build mapping: deal_id -> won_at (take LAST transition to WON per deal)
+        won_map = {}
+        for item in all_items:
+            deal_id = int(item.get("OWNER_ID", 0))
+            ct = item.get("CREATED_TIME", "")
+            if not deal_id or not ct:
+                continue
+            try:
+                dt = datetime.fromisoformat(ct.replace("T", " ").split("+")[0])
+            except (ValueError, TypeError):
+                continue
+            # Keep the most recent WON transition
+            if deal_id not in won_map or dt > won_map[deal_id]:
+                won_map[deal_id] = dt
+
+        print(f"[BX24] Stage history: {len(won_map)} deals with WON date (stage={stage_won})")
+        return won_map
+
+    # =========================================================
     # LEAD ACTIVITIES (for response time)
     # =========================================================
 
