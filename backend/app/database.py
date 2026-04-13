@@ -34,6 +34,20 @@ def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         print("Database initialized successfully")
+
+        # Auto-migrate: add missing columns to existing tables
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        migrations = [
+            ("deals", "won_at", "TIMESTAMP"),
+        ]
+        with engine.begin() as conn:
+            for table, column, col_type in migrations:
+                existing_cols = [c["name"] for c in inspector.get_columns(table)]
+                if column not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                    print(f"Migration: added {table}.{column} ({col_type})")
+
     except Exception as e:
         print(f"Warning: Database init failed: {e}")
         print("App will start, but DB features won't work until connection is available")
