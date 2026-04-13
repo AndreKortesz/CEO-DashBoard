@@ -216,17 +216,29 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
     db.commit()
 
     # --- Populate won_at from stage history (real date of C7:WON transition) ---
+    # First, clear won_at for all is_won deals in current batch so stagehistory takes priority
+    from sqlalchemy import select as sa_select
+    all_won_deals = db.execute(
+        sa_select(Deal).where(Deal.is_won == True)
+    ).scalars().all()
+    for deal in all_won_deals:
+        deal.won_at = None
+    db.commit()
+
     won_map = bx.get_won_dates(category_id=settings.DEALS_CATEGORY_ID, date_from=date_from)
     won_updated = 0
     won_fallback = 0
+    deals_with_real_won_at = set()
+
+    # Stage history = source of truth for won_at
     for deal_id, won_dt in won_map.items():
         deal = db.get(Deal, deal_id)
-        if deal and deal.is_won and deal.won_at != won_dt:
+        if deal and deal.is_won:
             deal.won_at = won_dt
+            deals_with_real_won_at.add(deal_id)
             won_updated += 1
 
-    # Fallback: for is_won deals without won_at (stagehistory too old), use last_activity_at
-    from sqlalchemy import select as sa_select
+    # Fallback: ONLY for is_won deals that stagehistory didn't cover
     orphan_won = db.execute(
         sa_select(Deal).where(
             Deal.is_won == True,
