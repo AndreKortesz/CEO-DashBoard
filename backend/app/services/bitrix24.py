@@ -133,9 +133,11 @@ class Bitrix24Service:
     # DEALS (category_id=7 — main sales funnel)
     # =========================================================
 
-    def get_deals(self, category_id: int = 7, date_from: datetime = None) -> list:
+    def get_deals(self, category_id: int = 7, date_from: datetime = None, date_modify_from: datetime = None) -> list:
         filters = {"CATEGORY_ID": category_id}
-        if date_from:
+        if date_modify_from:
+            filters[">=DATE_MODIFY"] = date_modify_from.isoformat()
+        elif date_from:
             filters[">=DATE_CREATE"] = date_from.isoformat()
 
         return self._fetch_all("crm.deal.list", {
