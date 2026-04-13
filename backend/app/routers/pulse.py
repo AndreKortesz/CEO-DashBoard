@@ -27,10 +27,11 @@ def get_pulse(db: Session = Depends(get_db)):
     month_start = today.replace(day=1)
 
     # --- Revenue yesterday (closed deals) ---
+    # Use last_activity_at (= DATE_MODIFY) as real close date, not closed_at (= CLOSEDATE which is planned)
     revenue_yesterday = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
-            func.date(Deal.closed_at) == yesterday,
+            func.date(Deal.last_activity_at) == yesterday,
         )
     )
     revenue_yesterday_val = revenue_yesterday.scalar() or 0
@@ -55,7 +56,7 @@ def get_pulse(db: Session = Depends(get_db)):
     closed_yesterday = db.execute(
         select(func.count(Deal.id)).where(
             Deal.is_won == True,
-            func.date(Deal.closed_at) == yesterday,
+            func.date(Deal.last_activity_at) == yesterday,
         )
     )
     closed_yesterday_val = closed_yesterday.scalar() or 0
@@ -118,11 +119,11 @@ def get_pulse(db: Session = Depends(get_db)):
     plan_row = plan.scalar_one_or_none()
     plan_amount = plan_row.plan_amount if plan_row else 0
 
-    # Monthly gross income
+    # Monthly gross income — use last_activity_at as real close date
     monthly_gross = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
-            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.last_activity_at >= datetime.combine(month_start, datetime.min.time()),
         )
     )
     monthly_gross_val = monthly_gross.scalar() or 0
@@ -133,7 +134,7 @@ def get_pulse(db: Session = Depends(get_db)):
         select(func.avg(Deal.amount)).where(
             Deal.is_won == True,
             Deal.amount >= min_check,
-            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.last_activity_at >= datetime.combine(month_start, datetime.min.time()),
         )
     )
     avg_check_val = avg_check.scalar()

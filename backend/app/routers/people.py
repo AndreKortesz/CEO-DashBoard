@@ -29,7 +29,7 @@ def get_managers(db: Session = Depends(get_db)):
             select(func.count(Deal.id), func.sum(Deal.amount)).where(
                 Deal.assigned_by == manager,
                 Deal.is_won == True,
-                Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+                Deal.last_activity_at >= datetime.combine(month_start, datetime.min.time()),
             )
         )
         closed_row = closed.one()

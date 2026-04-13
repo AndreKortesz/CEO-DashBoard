@@ -151,7 +151,19 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
     print(f"[SYNC] Starting deals sync (last {days_back} days)...")
 
     date_from = datetime.utcnow() - timedelta(days=days_back)
-    raw_deals = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_from=date_from)
+    # Fetch deals created recently
+    raw_deals_created = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_from=date_from)
+    # Also fetch deals MODIFIED recently (catches old deals that were just closed/won)
+    raw_deals_modified = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_modify_from=date_from)
+    # Merge and deduplicate by ID
+    seen_ids = set()
+    raw_deals = []
+    for deal in raw_deals_created + raw_deals_modified:
+        did = deal.get("ID")
+        if did and did not in seen_ids:
+            seen_ids.add(did)
+            raw_deals.append(deal)
+    print(f"[SYNC] Deals: {len(raw_deals_created)} by created + {len(raw_deals_modified)} by modified = {len(raw_deals)} unique")
     stage_map = bx.get_stage_map(settings.DEALS_CATEGORY_ID)
 
     count_new = 0
