@@ -72,7 +72,7 @@ def _run_scheduled_sync():
     try:
         from app.services.sync import run_full_sync
         print("[SCHEDULER] Auto-sync started...")
-        result = run_full_sync(days_back=7)
+        result = run_full_sync(days_back=30)
         print(f"[SCHEDULER] Auto-sync finished: {result}")
     except Exception as e:
         print(f"[SCHEDULER] Auto-sync error: {e}")
