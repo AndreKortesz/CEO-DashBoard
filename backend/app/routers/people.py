@@ -61,7 +61,7 @@ def get_managers(
             ).where(
                 Lead.assigned_by == manager,
                 Lead.first_activity_at.isnot(None),
-                Lead.created_at >= datetime.combine(month_start, datetime.min.time()),
+                Lead.created_at >= period_start,
             )
         )
         response_times = []

@@ -67,6 +67,7 @@ class Bitrix24Service:
         if self._user_map is not None:
             return self._user_map
 
+        # Load active users
         users = self._call("user.get", {"filter": {"ACTIVE": True}})
         result = users.get("result", [])
         self._user_map = {}
@@ -75,13 +76,41 @@ class Bitrix24Service:
             name = f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip()
             if uid and name:
                 self._user_map[uid] = name
+
+        # Also load inactive users (fired/deactivated)
+        try:
+            inactive = self._call("user.get", {"filter": {"ACTIVE": False}})
+            for u in inactive.get("result", []):
+                uid = str(u.get("ID", ""))
+                name = f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip()
+                if uid and name and uid not in self._user_map:
+                    self._user_map[uid] = name
+        except Exception:
+            pass  # Non-critical — active users are enough
+
         return self._user_map
 
     def resolve_user(self, user_id) -> str:
-        """Resolve user ID to name."""
+        """Resolve user ID to name. Falls back to direct API lookup."""
         if not user_id:
             return ""
-        return self.get_user_map().get(str(user_id), f"ID:{user_id}")
+        uid = str(user_id)
+        name = self.get_user_map().get(uid)
+        if name:
+            return name
+        # Direct lookup for users not in cache (bots, external, etc.)
+        try:
+            resp = self._call("user.get", {"ID": uid})
+            users = resp.get("result", [])
+            if users:
+                u = users[0]
+                resolved = f"{u.get('NAME', '')} {u.get('LAST_NAME', '')}".strip()
+                if resolved:
+                    self._user_map[uid] = resolved
+                    return resolved
+        except Exception:
+            pass
+        return f"ID:{user_id}"
 
     # =========================================================
     # STAGE MAP (stage_id -> stage name)
