@@ -136,14 +136,30 @@ def get_pulse(
     active_deals_val = active_deals.scalar() or 0
 
     # --- Sales plan ---
-    plan = db.execute(
-        select(SalesPlan).where(
-            SalesPlan.year == today.year,
-            SalesPlan.month == today.month,
+    # Sum plans for all months covered by the selected period
+    # E.g. if period is Jan-Mar, sum plans for months 1, 2, 3
+    from calendar import monthrange
+    plan_months = set()
+    cursor = period_start
+    while cursor <= period_end:
+        plan_months.add((cursor.year, cursor.month))
+        # Move to first day of next month
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+
+    plan_amount = 0
+    for p_year, p_month in plan_months:
+        plan = db.execute(
+            select(SalesPlan).where(
+                SalesPlan.year == p_year,
+                SalesPlan.month == p_month,
+            )
         )
-    )
-    plan_row = plan.scalar_one_or_none()
-    plan_amount = plan_row.plan_amount if plan_row else 0
+        plan_row = plan.scalar_one_or_none()
+        if plan_row:
+            plan_amount += plan_row.plan_amount
 
     # Monthly revenue (by deals) — CLOSEDATE = "Дата завершения" in Bitrix24
     monthly_gross = db.execute(

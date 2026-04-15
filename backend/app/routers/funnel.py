@@ -155,16 +155,6 @@ def get_conversions(
     cutoff = datetime.combine(d_from, datetime.min.time())
     cutoff_end = datetime.combine(d_to, datetime.max.time())
 
-    # Total leads
-    leads_q = select(Lead).where(Lead.created_at >= cutoff, Lead.created_at <= cutoff_end)
-    if group_by:
-        leads = (db.execute(leads_q)).scalars().all()
-    else:
-        leads_count = db.execute(
-            select(func.count(Lead.id)).where(Lead.created_at >= cutoff)
-        )
-        total_leads = leads_count.scalar() or 0
-
     # Inspections (unique per deal_id)
     inspections_q = select(Visit).where(
         Visit.visit_type.in_(["О"]),
@@ -186,6 +176,14 @@ def get_conversions(
     unique_montages = {v.deal_id: v for v in montages if v.deal_id}
 
     if not group_by:
+        # No grouping — just count leads and return totals
+        leads_count = db.execute(
+            select(func.count(Lead.id)).where(
+                Lead.created_at >= cutoff,
+                Lead.created_at <= cutoff_end,
+            )
+        )
+        total_leads = leads_count.scalar() or 0
         n_insp = len(unique_inspections)
         n_mont = len(unique_montages)
         return {
@@ -197,12 +195,13 @@ def get_conversions(
             "conv_lead_montage": round(n_mont / total_leads * 100, 1) if total_leads else 0,
         }
 
-    # Grouped conversions
+    # Grouped conversions — fetch all leads once, reuse for both branches
     from collections import defaultdict
+    leads_q = select(Lead).where(Lead.created_at >= cutoff, Lead.created_at <= cutoff_end)
+    all_leads = (db.execute(leads_q)).scalars().all()
     groups = defaultdict(lambda: {"leads": 0, "inspections": set(), "montages": set()})
 
     if group_by == "manager":
-        all_leads = (db.execute(leads_q)).scalars().all()
         for l in all_leads:
             groups[l.assigned_by]["leads"] += 1
         for v in inspections:
@@ -261,32 +260,31 @@ def get_conversions(
                 "breakdown": rop_breakdown,
             } if rop_data else None,
         }
-    elif group_by == "direction":
-        all_leads = (db.execute(leads_q)).scalars().all()
-        for l in all_leads:
-            groups[l.direction or "Неизвестно"]["leads"] += 1
 
-        # Build deal_id -> direction map from deals table
-        from app.models import Deal as DealModel
-        deal_directions = {}
-        deal_rows = db.execute(
-            select(DealModel.id, DealModel.direction).where(
-                DealModel.direction.isnot(None),
-                DealModel.direction != "",
-            )
-        ).all()
-        for row in deal_rows:
-            deal_directions[row[0]] = row[1]
+    # group_by == "direction"
+    for l in all_leads:
+        groups[l.direction or "Неизвестно"]["leads"] += 1
 
-        # Assign inspections/montages to direction via linked deal
-        for v in inspections:
-            if v.deal_id:
-                direction = deal_directions.get(v.deal_id, "Неизвестно")
-                groups[direction]["inspections"].add(v.deal_id)
-        for v in montages:
-            if v.deal_id:
-                direction = deal_directions.get(v.deal_id, "Неизвестно")
-                groups[direction]["montages"].add(v.deal_id)
+    # Build deal_id -> direction map from deals table
+    deal_directions = {}
+    deal_rows = db.execute(
+        select(Deal.id, Deal.direction).where(
+            Deal.direction.isnot(None),
+            Deal.direction != "",
+        )
+    ).all()
+    for row in deal_rows:
+        deal_directions[row[0]] = row[1]
+
+    # Assign inspections/montages to direction via linked deal
+    for v in inspections:
+        if v.deal_id:
+            direction = deal_directions.get(v.deal_id, "Неизвестно")
+            groups[direction]["inspections"].add(v.deal_id)
+    for v in montages:
+        if v.deal_id:
+            direction = deal_directions.get(v.deal_id, "Неизвестно")
+            groups[direction]["montages"].add(v.deal_id)
 
     result = {}
     for key, data in groups.items():

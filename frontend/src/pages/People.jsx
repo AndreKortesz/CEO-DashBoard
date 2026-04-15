@@ -102,8 +102,12 @@ function ManagersTab() {
 function ManagerDetail({ name }) {
   const [data, setData] = useState(null)
   const navigate = useNavigate()
+  const { range } = useDates()
 
-  useEffect(() => { getManagerDetail(name).then(setData) }, [name])
+  useEffect(() => {
+    setData(null)
+    getManagerDetail(name, range).then(setData)
+  }, [name, range.from, range.to])
 
   if (!data) return (
     <PageWrapper title="Загрузка...">

@@ -301,48 +301,63 @@ def sync_visits(db: Session, days_back: int = 180) -> dict:
 # =============================================================
 
 def sync_roistat(db: Session, days_back: int = 30) -> dict:
-    """Sync Roistat channel data to PostgreSQL."""
+    """Sync Roistat channel data to PostgreSQL — per day granularity.
+    Fetches each day separately so historical data is preserved.
+    For auto-sync (days_back=30) only re-fetches last 3 days to save API calls.
+    """
     print(f"[SYNC] Starting Roistat sync (last {days_back} days)...")
 
-    date_from = date.today() - timedelta(days=days_back)
-    date_to = date.today()
-
-    try:
-        channels = roistat.get_channel_summary(date_from, date_to)
-    except Exception as e:
-        print(f"[SYNC] Roistat error: {e}")
-        return {"error": str(e)}
-
-    count = 0
     today = date.today()
 
-    for ch in channels:
-        # Upsert: check if exists for today + channel
-        existing = db.query(RoistatChannel).filter(
-            RoistatChannel.date == today,
-            RoistatChannel.channel_name == ch["channel_name"],
-        ).first()
+    # Auto-sync: only refresh last 3 days (data may be adjusted by Roistat)
+    # Manual sync (days_back > 30): refresh full range
+    refresh_days = min(days_back, 3) if days_back <= 30 else days_back
+    date_from = today - timedelta(days=refresh_days)
 
-        if existing:
-            rec = existing
-        else:
-            rec = RoistatChannel(date=today, channel_name=ch["channel_name"])
-            db.add(rec)
+    count = 0
+    errors = []
 
-        rec.visits = ch["visits"]
-        rec.leads = ch["leads"]
-        rec.calls = ch["calls"]
-        rec.cost_without_vat = ch["cost_without_vat"]
-        rec.cost_with_vat = ch["cost_with_vat"]
-        rec.cpl = ch["cpl"]
-        rec.conversion_rate = ch["conversion_rate"]
-        rec.sales = ch["sales"]
-        rec.revenue = ch["revenue"]
-        rec.updated_at = datetime.utcnow()
-        count += 1
+    current_day = date_from
+    while current_day <= today:
+        try:
+            channels = roistat.get_channel_summary(current_day, current_day)
+        except Exception as e:
+            errors.append(f"{current_day}: {e}")
+            print(f"[SYNC] Roistat error for {current_day}: {e}")
+            current_day += timedelta(days=1)
+            continue
+
+        for ch in channels:
+            # Upsert: check if exists for this day + channel
+            existing = db.query(RoistatChannel).filter(
+                RoistatChannel.date == current_day,
+                RoistatChannel.channel_name == ch["channel_name"],
+            ).first()
+
+            if existing:
+                rec = existing
+            else:
+                rec = RoistatChannel(date=current_day, channel_name=ch["channel_name"])
+                db.add(rec)
+
+            rec.visits = ch["visits"]
+            rec.leads = ch["leads"]
+            rec.calls = ch["calls"]
+            rec.cost_without_vat = ch["cost_without_vat"]
+            rec.cost_with_vat = ch["cost_with_vat"]
+            rec.cpl = ch["cpl"]
+            rec.conversion_rate = ch["conversion_rate"]
+            rec.sales = ch["sales"]
+            rec.revenue = ch["revenue"]
+            rec.updated_at = datetime.utcnow()
+            count += 1
+
+        current_day += timedelta(days=1)
 
     db.commit()
-    result = {"roistat_channels": count}
+    result = {"roistat_channels": count, "days_synced": refresh_days + 1}
+    if errors:
+        result["errors"] = errors
     print(f"[SYNC] Roistat: {result}")
     return result
 

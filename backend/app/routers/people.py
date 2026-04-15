@@ -131,9 +131,17 @@ def get_managers(
 @router.get("/people/managers/{manager_name}")
 def get_manager_detail(
     manager_name: str,
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_db),
 ):
     """Detailed manager card with Rechka history."""
+    today = date.today()
+    d_from = parse_date(date_from) or today.replace(day=1)
+    d_to = parse_date(date_to) or today
+    period_start = datetime.combine(d_from, datetime.min.time())
+    period_end = datetime.combine(d_to, datetime.max.time())
+
     # Rechka weekly history (last 10 weeks)
     rechka_history = db.execute(
         select(RechkaWeekly).where(
@@ -142,7 +150,7 @@ def get_manager_detail(
     )
     history = rechka_history.scalars().all()
 
-    # Active deals by stage
+    # Active deals by stage (current state — no date filter)
     deals_by_stage = db.execute(
         select(
             Deal.stage_name,
@@ -155,7 +163,7 @@ def get_manager_detail(
         ).group_by(Deal.stage_name)
     )
 
-    # Stale deals
+    # Stale deals (no activity > 7 days, still open)
     stale = db.execute(
         select(Deal).where(
             Deal.assigned_by == manager_name,
@@ -165,8 +173,22 @@ def get_manager_detail(
         ).order_by(Deal.last_activity_at.asc()).limit(10)
     )
 
+    # Closed deals in period (for summary)
+    closed = db.execute(
+        select(func.count(Deal.id), func.sum(Deal.amount)).where(
+            Deal.assigned_by == manager_name,
+            Deal.is_won == True,
+            Deal.closed_at >= period_start,
+            Deal.closed_at <= period_end,
+        )
+    )
+    closed_row = closed.one()
+
     return {
         "name": manager_name,
+        "period": {"from": d_from.isoformat(), "to": d_to.isoformat()},
+        "closed_deals": closed_row[0] or 0,
+        "closed_amount": round(closed_row[1] or 0, 0),
         "rechka_history": [
             {
                 "week": r.week_number,
