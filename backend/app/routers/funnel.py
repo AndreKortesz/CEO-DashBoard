@@ -15,19 +15,25 @@ router = APIRouter()
 settings = get_settings()
 
 
+def parse_date(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return date.fromisoformat(val)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/funnel/marketing")
 def get_marketing(
-    period: str = Query("month", regex="^(day|week|month)$"),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_db),
 ):
     """Marketing metrics from Roistat cache."""
     today = date.today()
-    if period == "day":
-        date_from = today - timedelta(days=1)
-    elif period == "week":
-        date_from = today - timedelta(days=7)
-    else:
-        date_from = today.replace(day=1)
+    d_from = parse_date(date_from) or today.replace(day=1)
+    d_to = parse_date(date_to) or today
 
     # Aggregated channel data
     result = db.execute(
@@ -40,7 +46,8 @@ def get_marketing(
             func.sum(RoistatChannel.sales).label("sales"),
             func.sum(RoistatChannel.revenue).label("revenue"),
         ).where(
-            RoistatChannel.date >= date_from,
+            RoistatChannel.date >= d_from,
+            RoistatChannel.date <= d_to,
         ).group_by(
             RoistatChannel.channel_name,
         ).order_by(
@@ -54,7 +61,7 @@ def get_marketing(
     total_revenue = sum(c.revenue or 0 for c in channels)
 
     return {
-        "period": period,
+        "period": f"{d_from.isoformat()} — {d_to.isoformat()}",
         "totals": {
             "cost": round(total_cost, 0),
             "leads": total_leads,
@@ -80,9 +87,19 @@ def get_marketing(
 
 
 @router.get("/funnel/sales")
-def get_sales(db: Session = Depends(get_db)):
+def get_sales(
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    db: Session = Depends(get_db),
+):
     """Sales funnel — deal stages + conversions."""
-    # Deals by stage
+    today = date.today()
+    d_from = parse_date(date_from) or (today - timedelta(days=30))
+    d_to = parse_date(date_to) or today
+    cutoff = datetime.combine(d_from, datetime.min.time())
+    cutoff_end = datetime.combine(d_to, datetime.max.time())
+
+    # Deals by stage (active deals — no date filter, shows current state)
     stages = db.execute(
         select(
             Deal.stage_name,
@@ -99,14 +116,15 @@ def get_sales(db: Session = Depends(get_db)):
         for s in stages.all()
     ]
 
-    # Lead rejection reasons
+    # Lead rejection reasons (filtered by period)
     rejections = db.execute(
         select(
             Lead.rejection_reason,
             func.count(Lead.id).label("count"),
         ).where(
             Lead.rejection_reason.isnot(None),
-            Lead.created_at >= datetime.utcnow() - timedelta(days=30),
+            Lead.created_at >= cutoff,
+            Lead.created_at <= cutoff_end,
         ).group_by(Lead.rejection_reason).order_by(func.count(Lead.id).desc())
     )
     rejection_data = [
@@ -123,17 +141,22 @@ def get_sales(db: Session = Depends(get_db)):
 @router.get("/funnel/conversions")
 def get_conversions(
     group_by: str = Query(None, regex="^(manager|direction)$"),
-    days: int = Query(30, ge=7, le=365),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
     db: Session = Depends(get_db),
 ):
     """
     Conversion funnel: лид → осмотр → монтаж.
     Optional grouping by manager or direction.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    today = date.today()
+    d_from = parse_date(date_from) or (today - timedelta(days=30))
+    d_to = parse_date(date_to) or today
+    cutoff = datetime.combine(d_from, datetime.min.time())
+    cutoff_end = datetime.combine(d_to, datetime.max.time())
 
     # Total leads
-    leads_q = select(Lead).where(Lead.created_at >= cutoff)
+    leads_q = select(Lead).where(Lead.created_at >= cutoff, Lead.created_at <= cutoff_end)
     if group_by:
         leads = (db.execute(leads_q)).scalars().all()
     else:
@@ -147,6 +170,7 @@ def get_conversions(
         Visit.visit_type.in_(["О"]),
         Visit.is_completed == True,
         Visit.created_at >= cutoff,
+        Visit.created_at <= cutoff_end,
     )
     inspections = (db.execute(inspections_q)).scalars().all()
     unique_inspections = {v.deal_id: v for v in inspections if v.deal_id}
@@ -156,6 +180,7 @@ def get_conversions(
         Visit.visit_type.in_(["М", "M"]),
         Visit.is_completed == True,
         Visit.created_at >= cutoff,
+        Visit.created_at <= cutoff_end,
     )
     montages = (db.execute(montages_q)).scalars().all()
     unique_montages = {v.deal_id: v for v in montages if v.deal_id}

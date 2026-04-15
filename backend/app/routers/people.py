@@ -15,21 +15,38 @@ router = APIRouter()
 settings = get_settings()
 
 
+def parse_date(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return date.fromisoformat(val)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/people/managers")
-def get_managers(db: Session = Depends(get_db)):
+def get_managers(
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    db: Session = Depends(get_db),
+):
     """Manager performance data."""
     today = date.today()
-    month_start = today.replace(day=1)
+    d_from = parse_date(date_from) or today.replace(day=1)
+    d_to = parse_date(date_to) or today
+    period_start = datetime.combine(d_from, datetime.min.time())
+    period_end = datetime.combine(d_to, datetime.max.time())
     yesterday = today - timedelta(days=1)
 
     managers_data = []
     for manager in settings.MANAGERS:
-        # Closed deals this month
+        # Closed deals in period
         closed = db.execute(
             select(func.count(Deal.id), func.sum(Deal.amount)).where(
                 Deal.assigned_by == manager,
                 Deal.is_won == True,
-                Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+                Deal.closed_at >= period_start,
+                Deal.closed_at <= period_end,
             )
         )
         closed_row = closed.one()
@@ -183,11 +200,23 @@ def get_manager_detail(
 
 
 @router.get("/people/installers")
-def get_installers(db: Session = Depends(get_db)):
+def get_installers(
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    db: Session = Depends(get_db),
+):
     """Installer workload and performance."""
     today = date.today()
-    week_end = today + timedelta(days=(6 - today.weekday()))
-    week_start = today - timedelta(days=today.weekday())
+    d_from = parse_date(date_from)
+    d_to = parse_date(date_to)
+
+    # If dates provided, use them; otherwise default to current week
+    if d_from and d_to:
+        week_start = d_from
+        week_end = d_to
+    else:
+        week_start = today - timedelta(days=today.weekday())
+        week_end = today + timedelta(days=(6 - today.weekday()))
     yesterday = today - timedelta(days=1)
 
     installers_data = []

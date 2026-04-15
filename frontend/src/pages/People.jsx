@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getManagers, getManagerDetail, getInstallers } from '../api'
+import { useDates } from '../App'
 import { PageWrapper, MetricCard, SectionLabel, Badge, HBar, RedFlag, Skeleton } from '../components/UI'
 
 const TABS = ['Менеджеры', 'Монтажники']
@@ -34,8 +35,12 @@ export default function People() {
 function ManagersTab() {
   const [data, setData] = useState(null)
   const navigate = useNavigate()
+  const { range } = useDates()
 
-  useEffect(() => { getManagers().then(setData) }, [])
+  useEffect(() => {
+    setData(null)
+    getManagers(range).then(setData)
+  }, [range.from, range.to])
 
   if (!data) return <Skeleton className="h-40" />
 
@@ -179,8 +184,12 @@ function ManagerDetail({ name }) {
 
 function InstallersTab() {
   const [data, setData] = useState(null)
+  const { range } = useDates()
 
-  useEffect(() => { getInstallers().then(setData) }, [])
+  useEffect(() => {
+    setData(null)
+    getInstallers(range).then(setData)
+  }, [range.from, range.to])
 
   if (!data) return <Skeleton className="h-40" />
 

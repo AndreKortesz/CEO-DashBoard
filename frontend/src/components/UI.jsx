@@ -123,12 +123,34 @@ export function Skeleton({ className = '' }) {
 }
 
 // ─── Page wrapper ───────────────────────────
-export function PageWrapper({ title, children }) {
+export function PageWrapper({ title, children, hideDatePicker }) {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
-      <h1 className="text-xl font-medium text-gray-900 mb-5">{title}</h1>
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-xl font-medium text-gray-900">{title}</h1>
+        {!hideDatePicker && <DatePickerHeader />}
+      </div>
       {children}
       <NavBar />
     </div>
   )
+}
+
+function DatePickerHeader() {
+  try {
+    const { useDates } = require('../App')
+    const DatePicker = require('./DatePicker').default
+    const dates = useDates()
+    if (!dates) return null
+    return (
+      <DatePicker
+        preset={dates.preset}
+        range={dates.range}
+        onPreset={dates.selectPreset}
+        onCustomRange={dates.setCustomRange}
+      />
+    )
+  } catch {
+    return null
+  }
 }

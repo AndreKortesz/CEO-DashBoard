@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { getMarketing, getSales, getConversions } from '../api'
+import { useDates } from '../App'
 import { PageWrapper, MetricCard, SectionLabel, Badge, HBar, Skeleton } from '../components/UI'
 
 const TABS = ['Маркетинг', 'Продажи', 'По направлениям']
@@ -11,13 +12,15 @@ export default function Funnel() {
   const [convManager, setConvManager] = useState(null)
   const [convDirection, setConvDirection] = useState(null)
   const [loading, setLoading] = useState(true)
+  const { range } = useDates()
 
   useEffect(() => {
+    setLoading(true)
     Promise.all([
-      getMarketing(),
-      getSales(),
-      getConversions('manager'),
-      getConversions('direction'),
+      getMarketing(range),
+      getSales(range),
+      getConversions('manager', range),
+      getConversions('direction', range),
     ]).then(([m, s, cm, cd]) => {
       setMarketing(m)
       setSales(s)
@@ -25,7 +28,7 @@ export default function Funnel() {
       setConvDirection(cd)
       setLoading(false)
     })
-  }, [])
+  }, [range.from, range.to])
 
   return (
     <PageWrapper title="Воронка">

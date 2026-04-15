@@ -2,7 +2,7 @@
 /api/pulse — Main dashboard screen.
 Aggregates key metrics from all sources.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
@@ -15,16 +15,42 @@ router = APIRouter()
 settings = get_settings()
 
 
+def parse_date_param(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return date.fromisoformat(val)
+    except (ValueError, TypeError):
+        return None
+
+
 @router.get("/pulse")
-def get_pulse(db: Session = Depends(get_db)):
+def get_pulse(
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    db: Session = Depends(get_db),
+):
     """
     Main pulse screen data.
-    Returns key metrics, red flags, mini-charts.
+    Optional date_from/date_to (ISO format) for custom period.
+    Defaults to current month if not provided.
     """
     today = date.today()
+    d_from = parse_date_param(date_from)
+    d_to = parse_date_param(date_to)
+
+    # If both dates provided, use custom period
+    if d_from and d_to:
+        period_start = d_from
+        period_end = d_to
+    else:
+        period_start = today.replace(day=1)
+        period_end = today
+
     yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
-    month_start = today.replace(day=1)
+    period_start_dt = datetime.combine(period_start, datetime.min.time())
+    period_end_dt = datetime.combine(period_end, datetime.max.time())
 
     # --- Revenue yesterday (closed deals) ---
     # CLOSEDATE = correct close date in Bitrix24 (matches UI filter "Дата завершения")
@@ -123,7 +149,8 @@ def get_pulse(db: Session = Depends(get_db)):
     monthly_gross = db.execute(
         select(func.sum(Deal.amount)).where(
             Deal.is_won == True,
-            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.closed_at >= period_start_dt,
+            Deal.closed_at <= period_end_dt,
         )
     )
     monthly_gross_val = monthly_gross.scalar() or 0
@@ -134,14 +161,46 @@ def get_pulse(db: Session = Depends(get_db)):
         select(func.avg(Deal.amount)).where(
             Deal.is_won == True,
             Deal.amount >= min_check,
-            Deal.closed_at >= datetime.combine(month_start, datetime.min.time()),
+            Deal.closed_at >= period_start_dt,
+            Deal.closed_at <= period_end_dt,
         )
     )
     avg_check_val = avg_check.scalar()
     avg_check_val = round(avg_check_val, 0) if avg_check_val else 0
 
+    # --- Period leads count ---
+    period_leads = db.execute(
+        select(func.count(Lead.id)).where(
+            Lead.created_at >= period_start_dt,
+            Lead.created_at <= period_end_dt,
+        )
+    )
+    period_leads_val = period_leads.scalar() or 0
+
+    # --- Period closed deals count ---
+    period_closed = db.execute(
+        select(func.count(Deal.id)).where(
+            Deal.is_won == True,
+            Deal.closed_at >= period_start_dt,
+            Deal.closed_at <= period_end_dt,
+        )
+    )
+    period_closed_val = period_closed.scalar() or 0
+
+    # --- Period montages ---
+    period_montages = db.execute(
+        select(func.count(Visit.id)).where(
+            Visit.visit_type.in_(["М", "M"]),
+            Visit.is_completed == True,
+            Visit.completed_at >= period_start_dt,
+            Visit.completed_at <= period_end_dt,
+        )
+    )
+    period_montages_val = period_montages.scalar() or 0
+
     return {
         "date": today.isoformat(),
+        "period": {"from": period_start.isoformat(), "to": period_end.isoformat()},
         "metrics": {
             "revenue_yesterday": revenue_yesterday_val,
             "leads_yesterday": leads_yesterday_val,
@@ -149,6 +208,10 @@ def get_pulse(db: Session = Depends(get_db)):
             "closed_deals_yesterday": closed_yesterday_val,
             "montages_yesterday": montages_yesterday_val,
             "avg_montage_check": avg_check_val,
+            "period_leads": period_leads_val,
+            "period_closed": period_closed_val,
+            "period_montages": period_montages_val,
+            "period_revenue": monthly_gross_val,
         },
         "red_flags": {
             "stale_deals_7d": stale_deals_val,

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getPulse } from '../api'
+import { useDates } from '../App'
 import {
   PageWrapper, MetricCard, RedFlag, SectionLabel, HBar, Skeleton,
 } from '../components/UI'
@@ -9,10 +10,12 @@ export default function Pulse() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const { range, label: periodLabel } = useDates()
 
   useEffect(() => {
-    getPulse().then(d => { setData(d); setLoading(false) })
-  }, [])
+    setLoading(true)
+    getPulse(range).then(d => { setData(d); setLoading(false) })
+  }, [range.from, range.to])
 
   const today = new Date().toLocaleDateString('ru-RU', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -52,7 +55,7 @@ export default function Pulse() {
         Данные загружаются из Bitrix24 и Roistat. Подключите источники данных для получения AI-аналитики.
       </div>
 
-      {/* Key metrics */}
+      {/* Key metrics yesterday */}
       <SectionLabel>Ключевые метрики вчера</SectionLabel>
       <div className="grid grid-cols-4 gap-3 mb-6">
         <MetricCard label="Выручка вчера" value={formatMoney(m.revenue_yesterday)} />
@@ -60,9 +63,18 @@ export default function Pulse() {
         <MetricCard label="Закрыто сделок" value={m.closed_deals_yesterday} />
         <MetricCard label="Монтажей завершено" value={m.montages_yesterday} />
       </div>
+
+      {/* Period metrics */}
+      <SectionLabel>За период ({periodLabel})</SectionLabel>
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <MetricCard label="Лидов за неделю" value={m.leads_week} />
+        <MetricCard label="Выручка" value={formatMoney(m.period_revenue)} />
+        <MetricCard label="Лидов" value={m.period_leads} />
+        <MetricCard label="Закрыто сделок" value={m.period_closed} />
+        <MetricCard label="Монтажей" value={m.period_montages} />
+      </div>
+      <div className="grid grid-cols-4 gap-3 mb-6">
         <MetricCard label="Средний чек монтажа" value={formatMoney(m.avg_montage_check)} />
+        <MetricCard label="Лидов за неделю" value={m.leads_week} />
         <MetricCard label="Активных лидов" value={data?.funnel?.active_leads} />
         <MetricCard label="Активных сделок" value={data?.funnel?.active_deals} />
       </div>
