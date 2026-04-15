@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Activity, TrendingUp, Users, Wallet, Radar,
 } from 'lucide-react'
+import DatePicker from './DatePicker'
+import { useDates } from '../App'
 
 // ─── Metric card ────────────────────────────
 export function MetricCard({ label, value, sub, trend }) {
@@ -137,20 +139,14 @@ export function PageWrapper({ title, children, hideDatePicker }) {
 }
 
 function DatePickerHeader() {
-  try {
-    const { useDates } = require('../App')
-    const DatePicker = require('./DatePicker').default
-    const dates = useDates()
-    if (!dates) return null
-    return (
-      <DatePicker
-        preset={dates.preset}
-        range={dates.range}
-        onPreset={dates.selectPreset}
-        onCustomRange={dates.setCustomRange}
-      />
-    )
-  } catch {
-    return null
-  }
+  const dates = useDates()
+  if (!dates) return null
+  return (
+    <DatePicker
+      preset={dates.preset}
+      range={dates.range}
+      onPreset={dates.selectPreset}
+      onCustomRange={dates.setCustomRange}
+    />
+  )
 }
