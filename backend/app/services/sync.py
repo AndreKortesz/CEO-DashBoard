@@ -124,7 +124,13 @@ def sync_leads(db: Session, days_back: int = 90) -> dict:
         lead.created_at = parse_dt(raw.get("DATE_CREATE"))
         lead.closed_at = parse_dt(raw.get("DATE_CLOSED"))
         lead.is_converted = raw.get("STATUS_SEMANTIC_ID") == "S"
-        lead.is_rejected = raw.get("STATUS_SEMANTIC_ID") == "F"
+        # is_rejected: by semantic ID OR by explicit status list
+        # (Bitrix24 custom statuses like "Почта", "Дубль" may have SEMANTIC_ID="P" not "F")
+        status_id = raw.get("STATUS_ID", "")
+        lead.is_rejected = (
+            raw.get("STATUS_SEMANTIC_ID") == "F"
+            or status_id in settings.LEAD_REJECTED_STATUSES
+        )
         lead.rejection_reason = raw.get(settings.BX_LEAD_REJECTION_FIELD, "")
         lead.updated_at = datetime.utcnow()
 

@@ -46,6 +46,16 @@ class Settings:
     VISITS_CATEGORY_ID: int = 45
     LEAD_STATUS_SUCCESS: str = "CONVERTED"
 
+    # Lead statuses that are rejections (STATUS_SEMANTIC_ID is not always "F" for custom statuses!)
+    # These are determined by their position in the Bitrix24 kanban (red columns)
+    LEAD_REJECTED_STATUSES: set = {
+        "JUNK",       # Не клиент (system)
+        "6",          # Не дозвон
+        "10",         # Неуспешный лид
+        "24",         # Дубль
+        "27",         # Почта
+    }
+
     # --- Bitrix24 UF field IDs (from crm.lead.fields) ---
     # "Вид услуг" on leads — multiple enumeration
     BX_LEAD_DIRECTION_FIELD: str = "UF_CRM_1692125741676"
