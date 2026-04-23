@@ -100,3 +100,71 @@ def debug_roistat():
             "error": str(e),
             "error_type": type(e).__name__,
         }
+
+
+@router.get("/sync/debug-leads")
+def debug_leads():
+    """Debug: show lead status distribution for ROP to find is_rejected issues."""
+    from sqlalchemy import select, func
+    from app.models import Lead
+    from app.config import get_settings
+    settings = get_settings()
+    db = SessionLocal()
+    try:
+        rop_name = settings.ROP
+
+        # All leads assigned to ROP — group by status_id, is_rejected, is_converted
+        status_breakdown = db.execute(
+            select(
+                Lead.status_id,
+                Lead.status_name,
+                Lead.is_rejected,
+                Lead.is_converted,
+                func.count(Lead.id).label("count"),
+            ).where(
+                Lead.assigned_by == rop_name,
+            ).group_by(
+                Lead.status_id, Lead.status_name, Lead.is_rejected, Lead.is_converted,
+            ).order_by(func.count(Lead.id).desc())
+        ).all()
+
+        # Same but only for "in work" (not rejected, not converted)
+        in_work_statuses = db.execute(
+            select(
+                Lead.status_id,
+                Lead.status_name,
+                func.count(Lead.id).label("count"),
+            ).where(
+                Lead.assigned_by == rop_name,
+                Lead.is_rejected == False,
+                Lead.is_converted == False,
+            ).group_by(
+                Lead.status_id, Lead.status_name,
+            ).order_by(func.count(Lead.id).desc())
+        ).all()
+
+        return {
+            "rop_name": rop_name,
+            "total_rop_leads": sum(r.count for r in status_breakdown),
+            "all_statuses": [
+                {
+                    "status_id": r.status_id,
+                    "status_name": r.status_name,
+                    "is_rejected": r.is_rejected,
+                    "is_converted": r.is_converted,
+                    "count": r.count,
+                }
+                for r in status_breakdown
+            ],
+            "in_work_detail": [
+                {
+                    "status_id": r.status_id,
+                    "status_name": r.status_name,
+                    "count": r.count,
+                }
+                for r in in_work_statuses
+            ],
+            "total_in_work": sum(r.count for r in in_work_statuses),
+        }
+    finally:
+        db.close()
