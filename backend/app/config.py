@@ -22,7 +22,7 @@ class Settings:
     # --- Phase 1: Roistat ---
     ROISTAT_API_KEY: str = os.getenv("ROISTAT_API_KEY", "")
     ROISTAT_PROJECT_ID: str = os.getenv("ROISTAT_PROJECT_ID", "37488")
-    ROISTAT_VAT_MULTIPLIER: float = float(os.getenv("ROISTAT_VAT_MULTIPLIER", "1.2"))
+    ROISTAT_VAT_MULTIPLIER: float = float(os.getenv("ROISTAT_VAT_MULTIPLIER", "1.0"))
 
     # --- Phase 2+ (fill later) ---
     YANDEX_DIRECT_TOKEN_1: str = os.getenv("YANDEX_DIRECT_TOKEN_1", "")
