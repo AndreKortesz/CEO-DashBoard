@@ -72,7 +72,7 @@ def _run_scheduled_sync():
     try:
         from app.services.sync import run_full_sync
         print("[SCHEDULER] Auto-sync started...")
-        result = run_full_sync(days_back=30)
+        result = run_full_sync(days_back=90)
         print(f"[SCHEDULER] Auto-sync finished: {result}")
     except Exception as e:
         print(f"[SCHEDULER] Auto-sync error: {e}")
@@ -83,17 +83,35 @@ def _run_scheduled_sync():
         _sync_timer.start()
 
 
+def _run_initial_sync():
+    """First sync after startup — loads ALL Bitrix24 data + Roistat 120 days."""
+    try:
+        from app.services.sync import run_full_sync
+        print("[SCHEDULER] Initial full sync started (ALL Bitrix24 data + Roistat 120 days)...")
+        result = run_full_sync(days_back=0, roistat_days_back=120)
+        print(f"[SCHEDULER] Initial full sync finished: {result}")
+    except Exception as e:
+        print(f"[SCHEDULER] Initial sync error: {e}")
+    finally:
+        # After initial sync, schedule regular auto-sync
+        global _sync_timer
+        _sync_timer = threading.Timer(SYNC_INTERVAL_SEC, _run_scheduled_sync)
+        _sync_timer.daemon = True
+        _sync_timer.start()
+        print(f"[SCHEDULER] Regular auto-sync scheduled every {SYNC_INTERVAL_SEC // 60} min")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown events."""
     global _sync_timer
     init_db()
 
-    # Start background sync after 60 sec delay (let server warm up)
-    _sync_timer = threading.Timer(60, _run_scheduled_sync)
+    # Start initial full sync after 60 sec delay (let server warm up)
+    _sync_timer = threading.Timer(60, _run_initial_sync)
     _sync_timer.daemon = True
     _sync_timer.start()
-    print(f"[SCHEDULER] Auto-sync scheduled every {SYNC_INTERVAL_SEC // 60} min (first run in 60 sec)")
+    print(f"[SCHEDULER] Initial sync in 60 sec, then auto-sync every {SYNC_INTERVAL_SEC // 60} min")
 
     yield
 

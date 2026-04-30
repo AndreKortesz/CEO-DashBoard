@@ -92,10 +92,16 @@ def extract_deal_id_from_link(link_value) -> int | None:
 # =============================================================
 
 def sync_leads(db: Session, days_back: int = 90) -> dict:
-    """Sync leads from Bitrix24 to PostgreSQL."""
-    print(f"[SYNC] Starting leads sync (last {days_back} days)...")
+    """Sync leads from Bitrix24 to PostgreSQL.
+    days_back=0 means load ALL leads (no date filter).
+    """
+    if days_back > 0:
+        print(f"[SYNC] Starting leads sync (last {days_back} days)...")
+        date_from = datetime.utcnow() - timedelta(days=days_back)
+    else:
+        print("[SYNC] Starting leads sync (ALL leads, no date filter)...")
+        date_from = None
 
-    date_from = datetime.utcnow() - timedelta(days=days_back)
     raw_leads = bx.get_leads(date_from=date_from)
     lead_status_map = bx.get_lead_status_map()
 
@@ -154,14 +160,24 @@ def sync_leads(db: Session, days_back: int = 90) -> dict:
 # =============================================================
 
 def sync_deals(db: Session, days_back: int = 180) -> dict:
-    """Sync deals from Bitrix24 main funnel to PostgreSQL."""
-    print(f"[SYNC] Starting deals sync (last {days_back} days)...")
+    """Sync deals from Bitrix24 main funnel to PostgreSQL.
+    days_back=0 means load ALL deals (no date filter).
+    """
+    if days_back > 0:
+        print(f"[SYNC] Starting deals sync (last {days_back} days)...")
+        date_from = datetime.utcnow() - timedelta(days=days_back)
+    else:
+        print("[SYNC] Starting deals sync (ALL deals, no date filter)...")
+        date_from = None
 
-    date_from = datetime.utcnow() - timedelta(days=days_back)
-    # Fetch deals created recently
+    # Fetch deals created in period (or all)
     raw_deals_created = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_from=date_from)
     # Also fetch deals MODIFIED recently (catches old deals that were just closed/won)
-    raw_deals_modified = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_modify_from=date_from)
+    # For full sync (days_back=0), skip this — we already get everything
+    if date_from:
+        raw_deals_modified = bx.get_deals(category_id=settings.DEALS_CATEGORY_ID, date_modify_from=date_from)
+    else:
+        raw_deals_modified = []
     # Merge and deduplicate by ID
     seen_ids = set()
     raw_deals = []
@@ -231,10 +247,16 @@ def sync_deals(db: Session, days_back: int = 180) -> dict:
 # =============================================================
 
 def sync_visits(db: Session, days_back: int = 180) -> dict:
-    """Sync visits from Bitrix24 visits funnel to PostgreSQL."""
-    print(f"[SYNC] Starting visits sync (last {days_back} days)...")
+    """Sync visits from Bitrix24 visits funnel to PostgreSQL.
+    days_back=0 means load ALL visits (no date filter).
+    """
+    if days_back > 0:
+        print(f"[SYNC] Starting visits sync (last {days_back} days)...")
+        date_from = datetime.utcnow() - timedelta(days=days_back)
+    else:
+        print("[SYNC] Starting visits sync (ALL visits, no date filter)...")
+        date_from = None
 
-    date_from = datetime.utcnow() - timedelta(days=days_back)
     raw_visits = bx.get_visits(date_from=date_from)
     stage_map = bx.get_stage_map(settings.VISITS_CATEGORY_ID)
 
@@ -372,12 +394,14 @@ def sync_roistat(db: Session, days_back: int = 30) -> dict:
 # FULL SYNC
 # =============================================================
 
-def run_full_sync(days_back: int = 90) -> dict:
-    """Run full synchronization of all Phase 1 data sources."""
+def run_full_sync(days_back: int = 90, roistat_days_back: int = 30) -> dict:
+    """Run full synchronization of all Phase 1 data sources.
+    days_back=0 for Bitrix24 means load ALL records (no date filter).
+    """
     global _sync_status
     started = datetime.utcnow()
     _sync_status["is_running"] = True
-    print(f"[SYNC] === Full sync started at {started.isoformat()} ===")
+    print(f"[SYNC] === Full sync started at {started.isoformat()} (days_back={days_back}, roistat={roistat_days_back}) ===")
     db = SessionLocal()
     results = {}
 
@@ -385,7 +409,7 @@ def run_full_sync(days_back: int = 90) -> dict:
         results["leads"] = sync_leads(db, days_back=days_back)
         results["deals"] = sync_deals(db, days_back=days_back)
         results["visits"] = sync_visits(db, days_back=days_back)
-        results["roistat"] = sync_roistat(db, days_back=30)
+        results["roistat"] = sync_roistat(db, days_back=roistat_days_back)
         results["status"] = "ok"
         _sync_status["last_sync_status"] = "ok"
         _sync_status["last_sync_error"] = None

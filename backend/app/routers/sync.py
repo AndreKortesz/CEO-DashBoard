@@ -17,9 +17,10 @@ def sync_status():
 
 
 @router.post("/sync/run")
-def trigger_full_sync(days_back: int = Query(90, ge=1, le=365)):
+def trigger_full_sync(days_back: int = Query(90, ge=0, le=365)):
     """
     Run full data sync from all Phase 1 sources.
+    days_back=0 means load ALL Bitrix24 data (no date filter).
     This pulls leads, deals, visits from Bitrix24 and channels from Roistat.
     """
     started = datetime.utcnow()
